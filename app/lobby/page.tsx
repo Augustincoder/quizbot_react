@@ -29,8 +29,12 @@ export default function LobbyPage() {
     const roomId = `room_${Date.now()}`
     setRoom(roomId, selectedMode, matchType)
     
-    // Navigate to matchmaking
-    router.push('/matchmaking')
+    // Bypass matchmaking for solo mode and go straight to arena
+    if (matchType === 'solo') {
+      router.push(`/arena/${selectedMode}`)
+    } else {
+      router.push('/matchmaking')
+    }
   }
 
   return (

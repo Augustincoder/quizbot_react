@@ -23,6 +23,13 @@ export type SocketEventType =
   | 'score_update'
   | 'game_end'
   | 'error'
+  | 'zakovat_results'
+  | 'game:question'
+  | 'game:phase_action'
+  | 'game:round_result'
+  | 'buzzer:locked'
+  | 'buzzer:reactivate'
+  | 'buzzer:result'
 
 export interface SocketEvent {
   type: SocketEventType

@@ -4,6 +4,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useUserStore } from '@/store/user-store'
 import { Trophy } from 'lucide-react'
 
+import Link from 'next/link'
+
 export function UserProfileCard() {
   const username = useUserStore((state) => state.username)
   const avatar = useUserStore((state) => state.avatar)
@@ -17,7 +19,7 @@ export function UserProfileCard() {
     .slice(0, 2)
 
   return (
-    <div className="flex items-center gap-4 p-4">
+    <Link href="/profile" className="flex items-center gap-4 p-4 hover:bg-card/40 transition-colors cursor-pointer">
       <Avatar className="h-12 w-12 border-2 border-border/50">
         <AvatarImage src={avatar} alt={username} />
         <AvatarFallback className="bg-primary/10 text-primary font-medium">
@@ -32,6 +34,6 @@ export function UserProfileCard() {
           <span className="text-sm text-muted-foreground">{mmr} MMR</span>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }

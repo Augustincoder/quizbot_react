@@ -12,10 +12,12 @@ export function useTimer(options: UseTimerOptions = {}) {
   const { onTimeUp, onTick } = options
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   
+  const dynamicTimerMs = useGameStore((state) => state.dynamicTimerMs)
   const timeRemaining = useGameStore((state) => state.timeRemaining)
   const timerActive = useGameStore((state) => state.timerActive)
   const setTimeRemaining = useGameStore((state) => state.setTimeRemaining)
   const setTimerActive = useGameStore((state) => state.setTimerActive)
+  const currentPhase = useGameStore((state) => state.currentPhase)
 
   const startTimer = useCallback((duration: number) => {
     setTimeRemaining(duration)
@@ -34,6 +36,17 @@ export function useTimer(options: UseTimerOptions = {}) {
     stopTimer()
     setTimeRemaining(duration)
   }, [stopTimer, setTimeRemaining])
+
+  // Automatically start mirror timer when dynamicTimerMs changes and phase is reading
+  useEffect(() => {
+     if (currentPhase === 'reading' && dynamicTimerMs > 0) {
+        startTimer(Math.floor(dynamicTimerMs / 1000))
+     } else if (currentPhase === 'action' && useGameStore.getState().mode === 'zakovat') {
+        startTimer(60) // Zakovat action phase 60s
+     } else if (currentPhase !== 'reading' && currentPhase !== 'action') {
+        stopTimer()
+     }
+  }, [currentPhase, dynamicTimerMs, startTimer, stopTimer])
 
   useEffect(() => {
     if (!timerActive) {
@@ -62,12 +75,16 @@ export function useTimer(options: UseTimerOptions = {}) {
     }
   }, [timerActive, timeRemaining, setTimeRemaining, stopTimer, onTimeUp, onTick])
 
+  const progress = timeRemaining > 0 
+      ? (timeRemaining / Math.max(1, Math.floor(dynamicTimerMs / 1000) || 15)) * 100 
+      : 0;
+
   return {
     timeRemaining,
     timerActive,
     startTimer,
     stopTimer,
     resetTimer,
-    progress: timeRemaining > 0 ? (timeRemaining / (useGameStore.getState().currentQuestion?.timeLimit ?? 15)) * 100 : 0,
+    progress,
   }
 }

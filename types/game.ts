@@ -88,9 +88,9 @@ export const GAME_MODES: GameModeConfig[] = [
     descriptionUz: 'Vaqt bo\'yicha reyting',
     icon: 'timer',
     questionTime: 60,
-    answerTime: 10,
+    answerTime: 0, // No separate answer phase — input is always visible
     wrongAnswerPenalty: 0,
-    buzzerEnabled: true,
+    buzzerEnabled: false,
   },
   {
     id: 'erudit',
@@ -105,3 +105,43 @@ export const GAME_MODES: GameModeConfig[] = [
     buzzerEnabled: true,
   },
 ]
+
+// Game mode instruction texts (shown before match)
+export const GAME_MODE_INSTRUCTIONS: Record<GameMode, { title: string; rules: string[] }> = {
+  'brain-ring': {
+    title: 'Brain Ring qoidalari',
+    rules: [
+      'Savol o\'qiladi, so\'ng buzzer faollashadi.',
+      'Birinchi buzzer bosgan o\'yinchi javob beradi.',
+      'Noto\'g\'ri javobda 2 soniya kutish — boshqalar davom etadi.',
+      'Har savol uchun maksimum 3 ta urinish.',
+    ],
+  },
+  'kahoot': {
+    title: 'Kahoot qoidalari',
+    rules: [
+      'Har savol uchun 4 ta variant beriladi.',
+      'To\'g\'ri va tezkor javob ko\'proq ball beradi.',
+      'Har savoldan keyin reyting ko\'rsatiladi.',
+      'Eng ko\'p ball to\'plagan g\'olib!',
+    ],
+  },
+  'zakovat': {
+    title: 'Zakovat qoidalari',
+    rules: [
+      'Savol o\'qiladi — javob maydoniga yozing.',
+      'Buzzer YO\'Q — hamma bir vaqtda javob beradi.',
+      'Faqat 1 ta urinish mumkin — o\'ylab yozing.',
+      'Tezroq to\'g\'ri javob bergan ko\'proq ball oladi.',
+    ],
+  },
+  'erudit': {
+    title: 'Erudit Kvarteti qoidalari',
+    rules: [
+      'Brain Ring formatida, LEKIN jazo bilan.',
+      'Noto\'g\'ri javob uchun -10 ball olinadi!',
+      'Buzzer vaqti tugasa ham -10 ball.',
+      'Faqat ishonchingiz komil bo\'lsa bosing.',
+    ],
+  },
+}

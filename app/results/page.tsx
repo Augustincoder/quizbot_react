@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { AppShell } from '@/components/layout/app-shell'
 import { TgSafeArea } from '@/components/layout/tg-safe-area'
 import { ScoreSummary } from '@/components/results/score-summary'
@@ -12,8 +12,16 @@ import { Button } from '@/components/ui/button'
 import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
-import { Crown, ArrowRight } from 'lucide-react'
+import { Crown, ArrowRight, Bot, AlertTriangle, ChevronRight } from 'lucide-react'
 import confetti from 'canvas-confetti'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 export default function ResultsPage() {
   const router = useRouter()
@@ -28,6 +36,24 @@ export default function ResultsPage() {
 
   const [showConfetti, setShowConfetti] = useState(false)
   const [aiRecheckResult, setAIRecheckResult] = useState<{ isValid: boolean; explanation: string } | null>(null)
+  
+  // AI Recheck Modal State
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false)
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null)
+
+  // Mock answered questions
+  const mockAnsweredQuestions = [
+    { id: 'q1', text: "Qaysi sayyora Quyosh tizimida eng katta?", userAnswer: "Jupiter", isCorrect: false, correctRate: 85 },
+    { id: 'q2', text: "O'zbekistonning poytaxti qaysi shahar?", userAnswer: "Toshkent shahri", isCorrect: false, correctRate: 32 },
+    { id: 'q3', text: "Kimyoviy element 'Au' ning nomi nima?", userAnswer: "Oltinn", isCorrect: false, correctRate: 90 },
+  ].sort((a, b) => a.correctRate - b.correctRate) // Sort by lowest correct rate (most controversial first)
+
+  useEffect(() => {
+    if (isAIModalOpen && !selectedQuestionId) {
+      // Auto-select most controversial
+      setSelectedQuestionId(mockAnsweredQuestions[0].id)
+    }
+  }, [isAIModalOpen, selectedQuestionId, mockAnsweredQuestions])
 
   const userScore = scores[userId || 'user'] || 0
   const isWinner = winner === userId || winner === 'user'
@@ -146,29 +172,17 @@ export default function ResultsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="mb-4"
+              className="mb-4 flex flex-col gap-2"
             >
-              <h3 className="text-sm font-medium text-foreground mb-2">Javobni qayta tekshirish</h3>
-              <div className="flex flex-col gap-2">
-                <AIRecheckButton
-                  questionText="Qaysi sayyora Quyosh tizimida eng katta?"
-                  userAnswer="Jupiter"
-                  onResult={handleAIRecheckResult}
-                />
-                {aiRecheckResult && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className={`p-3 rounded-lg text-sm ${
-                      aiRecheckResult.isValid
-                        ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30'
-                        : 'bg-rose-500/10 text-rose-600 border border-rose-500/30'
-                    }`}
-                  >
-                    {aiRecheckResult.explanation}
-                  </motion.div>
-                )}
-              </div>
+              <h3 className="text-sm font-medium text-foreground">Javobni qayta tekshirish</h3>
+              <Button
+                variant="outline"
+                onClick={() => setIsAIModalOpen(true)}
+                className="w-full h-12 rounded-xl gap-2 bg-card border-primary/30 text-primary hover:bg-primary/5"
+              >
+                <Bot className="h-5 w-5" />
+                AI orqali tekshirish
+              </Button>
             </motion.div>
 
             {/* Peer vote section */}
@@ -206,6 +220,97 @@ export default function ResultsPage() {
             </Button>
           </div>
         </div>
+
+        {/* AI Recheck Modal */}
+        <Dialog open={isAIModalOpen} onOpenChange={setIsAIModalOpen}>
+          <DialogContent className="rounded-3xl border-border/30 bg-background/98 backdrop-blur-xl sm:max-w-md p-0 flex flex-col max-h-[85vh]">
+            <DialogHeader className="p-6 pb-2 text-center border-b border-border/30 shrink-0">
+              <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                <Bot className="h-6 w-6 text-primary" />
+              </div>
+              <DialogTitle className="text-xl">AI Tekshiruvi</DialogTitle>
+              <DialogDescription className="text-sm mt-1">
+                Noto&apos;g&apos;ri deb topilgan javobingizni AI qayta tekshirib berishi mumkin.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 mb-1 px-1">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Munozarali javoblar
+                </span>
+              </div>
+              
+              {mockAnsweredQuestions.map((q, index) => {
+                const isSelected = selectedQuestionId === q.id
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => {
+                      setSelectedQuestionId(q.id)
+                      setAIRecheckResult(null) // reset result when changing selection
+                    }}
+                    className={cn(
+                      "flex flex-col text-left p-4 rounded-xl border transition-all duration-200",
+                      isSelected 
+                        ? "bg-primary/5 border-primary shadow-sm" 
+                        : "bg-card/50 border-border/30 hover:border-primary/50"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2 w-full">
+                      <span className="text-sm font-medium leading-snug line-clamp-2">
+                        {q.text}
+                      </span>
+                      {index === 0 && (
+                        <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500">
+                          {q.correctRate}% to&apos;g&apos;ri
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 w-full">
+                      <span className="text-xs text-muted-foreground">Sizning javobingiz:</span>
+                      <span className={cn(
+                        "text-sm font-semibold truncate",
+                        isSelected ? "text-primary" : "text-foreground"
+                      )}>
+                        &quot;{q.userAnswer}&quot;
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+
+              {/* Show result if checked */}
+              <AnimatePresence>
+                {aiRecheckResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -10, height: 0 }}
+                    className={cn(
+                      "mt-2 p-4 rounded-xl text-sm leading-relaxed border",
+                      aiRecheckResult.isValid
+                        ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/30"
+                        : "bg-rose-500/10 text-rose-700 border-rose-500/30"
+                    )}
+                  >
+                    {aiRecheckResult.explanation}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="p-4 border-t border-border/30 bg-background/50 shrink-0">
+              <AIRecheckButton
+                questionText={mockAnsweredQuestions.find(q => q.id === selectedQuestionId)?.text || ''}
+                userAnswer={mockAnsweredQuestions.find(q => q.id === selectedQuestionId)?.userAnswer || ''}
+                onResult={handleAIRecheckResult}
+                className="w-full h-12 rounded-xl"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
       </TgSafeArea>
     </AppShell>
   )

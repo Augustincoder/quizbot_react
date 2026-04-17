@@ -30,6 +30,8 @@ interface GameState {
   
   // Answers
   submittedAnswer: string | null
+  answeredPlayerId: string | null
+  pointsEarned: number
   isCorrect: boolean | null
   correctAnswer: string | null
   
@@ -49,18 +51,30 @@ interface GameState {
   mmrChanges: Record<string, number> | null
   winner: string | null
   
+  // Phase 4 Engine State
+  currentPhase: 'waiting' | 'reading' | 'action' | 'input' | 'leaderboard'
+  dynamicTimerMs: number
+  lockedPlayers: string[]
+  buzzerLockedBy: string | null
+  roundResults: any | null
+
   // Actions
   setRoom: (roomId: string, mode: GameMode, matchType: MatchType) => void
   setPlayers: (players: Player[]) => void
   setCurrentPlayer: (playerId: string) => void
   setPhase: (phase: GamePhase) => void
-  setQuestion: (question: Question, questionNumber: number, totalQuestions: number) => void
+  setCurrentPhase: (phase: 'waiting' | 'reading' | 'action' | 'input' | 'leaderboard') => void
+  setQuestion: (question: Question | any, questionNumber: number, totalQuestions: number, dynamicTimerMs?: number) => void
   setTimeRemaining: (time: number) => void
   setTimerActive: (active: boolean) => void
+  setDynamicTimerMs: (ms: number) => void
+  setLockedPlayers: (players: string[]) => void
+  setBuzzerLockedBy: (playerId: string | null) => void
+  setRoundResults: (results: any) => void
   pressBuzzer: (playerId: string, timestamp: number) => void
   lockBuzzer: () => void
   submitAnswer: (answer: string) => void
-  setAnswerResult: (isCorrect: boolean, correctAnswer: string) => void
+  setAnswerResult: (playerId: string | null, isCorrect: boolean, correctAnswer: string, pointsEarned: number) => void
   updateScore: (playerId: string, delta: number) => void
   setScores: (scores: Record<string, number>) => void
   requestAIRecheck: () => void
@@ -69,6 +83,8 @@ interface GameState {
   castPeerVote: (playerId: string, vote: boolean) => void
   endPeerVote: (accepted: boolean) => void
   setGameEnd: (finalScores: Record<string, number>, mmrChanges: Record<string, number>, winner: string | null) => void
+  setZakovatResults: (results: Array<{playerId: string, isCorrect: boolean, pointsEarned: number}>, correctAnswer: string) => void
+  zakovatResults: Array<{playerId: string, isCorrect: boolean, pointsEarned: number}> | null
   resetQuestion: () => void
   reset: () => void
 }
@@ -80,6 +96,11 @@ const initialState = {
   players: [],
   currentPlayerId: null,
   phase: 'waiting' as GamePhase,
+  currentPhase: 'waiting' as const,
+  dynamicTimerMs: 0,
+  lockedPlayers: [],
+  buzzerLockedBy: null,
+  roundResults: null,
   currentQuestion: null,
   questionNumber: 0,
   totalQuestions: 0,
@@ -90,6 +111,8 @@ const initialState = {
   buzzerTimestamp: null,
   buzzerLocked: false,
   submittedAnswer: null,
+  answeredPlayerId: null,
+  pointsEarned: 0,
   isCorrect: null,
   correctAnswer: null,
   scores: {},
@@ -100,6 +123,7 @@ const initialState = {
   finalScores: null,
   mmrChanges: null,
   winner: null,
+  zakovatResults: null,
 }
 
 export const useGameStore = create<GameState>()((set) => ({
@@ -110,6 +134,7 @@ export const useGameStore = create<GameState>()((set) => ({
     mode,
     matchType,
     phase: 'waiting',
+    currentPhase: 'waiting',
   }),
   
   setPlayers: (players) => set({ players }),
@@ -118,24 +143,34 @@ export const useGameStore = create<GameState>()((set) => ({
   
   setPhase: (phase) => set({ phase }),
   
-  setQuestion: (question, questionNumber, totalQuestions) => set({
+  setCurrentPhase: (phase) => set({ currentPhase: phase }),
+
+  setQuestion: (question, questionNumber, totalQuestions, dynamicTimerMs = 15000) => set({
     currentQuestion: question,
     questionNumber,
     totalQuestions,
-    questionStartTime: Date.now(),
-    timeRemaining: question.timeLimit,
+    dynamicTimerMs,
+    currentPhase: 'reading',
     phase: 'question',
+    lockedPlayers: [],
+    buzzerLockedBy: null,
     buzzerWinner: null,
     buzzerTimestamp: null,
     buzzerLocked: false,
     submittedAnswer: null,
     isCorrect: null,
     correctAnswer: null,
+    roundResults: null,
     aiRecheckPending: false,
     aiRecheckResult: null,
     peerVoteActive: false,
     peerVotes: {},
   }),
+  
+  setDynamicTimerMs: (ms) => set({ dynamicTimerMs: ms }),
+  setLockedPlayers: (players) => set({ lockedPlayers: players }),
+  setBuzzerLockedBy: (playerId) => set({ buzzerLockedBy: playerId }),
+  setRoundResults: (results) => set({ roundResults: results, currentPhase: 'leaderboard' }),
   
   setTimeRemaining: (time) => set({ timeRemaining: time }),
   
@@ -157,9 +192,11 @@ export const useGameStore = create<GameState>()((set) => ({
     submittedAnswer: answer,
   }),
   
-  setAnswerResult: (isCorrect, correctAnswer) => set({
+  setAnswerResult: (playerId, isCorrect, correctAnswer, pointsEarned) => set({
+    answeredPlayerId: playerId,
     isCorrect,
     correctAnswer,
+    pointsEarned,
     phase: 'results',
   }),
   
@@ -201,6 +238,12 @@ export const useGameStore = create<GameState>()((set) => ({
     mmrChanges,
     winner,
     phase: 'finished',
+  }),
+  
+  setZakovatResults: (results, correctAnswer) => set({
+    zakovatResults: results,
+    correctAnswer: correctAnswer,
+    phase: 'results',
   }),
   
   resetQuestion: () => set({

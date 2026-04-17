@@ -7,6 +7,8 @@ import { AppShell } from '@/components/layout/app-shell'
 import { TgSafeArea } from '@/components/layout/tg-safe-area'
 import { PulseLoader } from '@/components/matchmaking/pulse-loader'
 import { OpponentFound } from '@/components/matchmaking/opponent-found'
+import { InstructionModal } from '@/components/lobby/instruction-modal'
+import { RoomInvite } from '@/components/lobby/room-invite'
 import { Button } from '@/components/ui/button'
 import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
@@ -22,17 +24,30 @@ const mockOpponents: Player[] = [
   { id: 'opp3', username: 'Sardor', avatar: '', mmr: 1250, gamesPlayed: 67, wins: 42, losses: 25, isReady: true, score: 0, connected: true },
 ]
 
+// Generate a mock 6-char room code
+function generateRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let result = ''
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
 export default function MatchmakingPage() {
   const router = useRouter()
   const { showBack, hideBack, haptic } = useTelegram()
   const [opponentFound, setOpponentFound] = useState(false)
   const [opponent, setOpponent] = useState<Player | null>(null)
-  
+  const [showInstructions, setShowInstructions] = useState(true)
+  const [instructionsConfirmed, setInstructionsConfirmed] = useState(false)
+  const [roomCode] = useState(() => generateRoomCode())
+
   const mode = useGameStore((state) => state.mode)
   const matchType = useGameStore((state) => state.matchType)
   const setPlayers = useGameStore((state) => state.setPlayers)
   const reset = useGameStore((state) => state.reset)
-  
+
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
   const avatar = useUserStore((state) => state.avatar)
@@ -63,11 +78,24 @@ export default function MatchmakingPage() {
     return () => hideBack()
   }, [showBack, hideBack, handleCancel])
 
+  // Handle instruction confirmation
+  const handleInstructionConfirm = useCallback(() => {
+    setShowInstructions(false)
+    setInstructionsConfirmed(true)
+    haptic('medium')
+  }, [haptic])
+
+  // Only start matchmaking after instructions are confirmed
   useEffect(() => {
     if (!mode) {
       router.push('/lobby')
       return
     }
+
+    if (!instructionsConfirmed) return
+
+    // For friends mode, don't auto-match
+    if (matchType === 'friends') return
 
     // Simulate finding an opponent
     const matchDelay = matchType === 'solo' ? 1000 : 2000 + Math.random() * 2000
@@ -77,13 +105,13 @@ export default function MatchmakingPage() {
       setOpponent(randomOpponent)
       setOpponentFound(true)
       haptic('success')
-      
+
       // Set players in store
       setPlayers([currentPlayer, randomOpponent])
     }, matchDelay)
 
     return () => clearTimeout(findOpponentTimer)
-  }, [mode, matchType, router, haptic, setPlayers, currentPlayer])
+  }, [mode, matchType, router, haptic, setPlayers, instructionsConfirmed])
 
   useEffect(() => {
     if (opponentFound && opponent) {
@@ -95,6 +123,9 @@ export default function MatchmakingPage() {
       return () => clearTimeout(navigateTimer)
     }
   }, [opponentFound, opponent, router, mode])
+
+  // Deep link for inviting friends
+  const deepLink = `https://t.me/AqliyOyinlarBot/app?startapp=${roomCode}`
 
   return (
     <AppShell>
@@ -123,7 +154,40 @@ export default function MatchmakingPage() {
           {/* Content */}
           <div className="flex-1 flex items-center justify-center p-6">
             <AnimatePresence mode="wait">
-              {!opponentFound ? (
+              {!instructionsConfirmed ? (
+                // Show nothing behind the modal
+                <motion.div
+                  key="waiting-instructions"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex flex-col items-center gap-4"
+                >
+                  <motion.p
+                    className="text-sm text-muted-foreground text-center"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  >
+                    Qoidalarni o&apos;qing...
+                  </motion.p>
+                </motion.div>
+              ) : matchType === 'friends' && !opponentFound ? (
+                // Friends room UI
+                <motion.div
+                  key="room-invite"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="w-full max-w-md"
+                >
+                  <RoomInvite
+                    roomCode={roomCode}
+                    deepLink={deepLink}
+                    players={[
+                      { id: userId || 'user', name: username, isReady: true },
+                    ]}
+                  />
+                </motion.div>
+              ) : !opponentFound ? (
                 <motion.div
                   key="searching"
                   initial={{ opacity: 0 }}
@@ -160,6 +224,13 @@ export default function MatchmakingPage() {
             </AnimatePresence>
           </div>
         </div>
+
+        {/* Instruction Modal — blocks everything until confirmed */}
+        <InstructionModal
+          open={showInstructions && !!mode}
+          mode={mode}
+          onConfirm={handleInstructionConfirm}
+        />
       </TgSafeArea>
     </AppShell>
   )

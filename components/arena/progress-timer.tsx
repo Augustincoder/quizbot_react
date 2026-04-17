@@ -16,9 +16,12 @@ export function ProgressTimer({
   variant = 'bar',
   className,
 }: ProgressTimerProps) {
-  const progress = (timeRemaining / totalTime) * 100
-  const isLow = timeRemaining <= 5
-  const isCritical = timeRemaining <= 3
+  const validTime = timeRemaining || 0
+  const validTotal = totalTime || 1
+  const progress = Math.max(0, Math.min(100, (validTime / validTotal) * 100)) || 0
+  
+  const isLow = validTime <= 5
+  const isCritical = validTime <= 3
 
   if (variant === 'circle') {
     const circumference = 2 * Math.PI * 40

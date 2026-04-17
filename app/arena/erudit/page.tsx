@@ -9,287 +9,277 @@ import { QuestionDisplay } from '@/components/arena/question-display'
 import { ProgressTimer } from '@/components/arena/progress-timer'
 import { BuzzerButton } from '@/components/arena/buzzer-button'
 import { AnswerInput } from '@/components/arena/answer-input'
-import { BlurOverlay } from '@/components/arena/blur-overlay'
+import { PostQuestionResult } from '@/components/arena/post-question-result'
 import { Badge } from '@/components/ui/badge'
 import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
-import type { Question } from '@/types/game'
-import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { useGameSocket } from '@/hooks/use-game-socket'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 
-// Mock Erudit questions
-const mockQuestions: Question[] = [
-  {
-    id: 'e1',
-    text: 'Qaysi matematik "Pi" sonining dastlabki hisob-kitoblarini amalga oshirgan?',
-    category: 'Matematika',
-    difficulty: 'hard',
-    correctAnswer: 'Arximed',
-    timeLimit: 15,
-    points: 15,
-  },
-  {
-    id: 'e2',
-    text: 'Qaysi mamlakatda birinchi olimpiya o\'yinlari o\'tkazilgan?',
-    category: 'Tarix',
-    difficulty: 'medium',
-    correctAnswer: 'Gretsiya',
-    timeLimit: 15,
-    points: 15,
-  },
-  {
-    id: 'e3',
-    text: 'Qaysi element inson tanasida eng ko\'p uchraydi?',
-    category: 'Biologiya',
-    difficulty: 'medium',
-    correctAnswer: 'Kislorod',
-    timeLimit: 15,
-    points: 15,
-  },
-]
-
-const WRONG_ANSWER_PENALTY = -10
+// Render specific result struct
+interface PlayerResultData {
+  playerId: string
+  playerName: string
+  answer: string | null
+  isCorrect: boolean
+  pointsDelta: number
+  newScore: number
+  isCurrentUser?: boolean
+}
 
 export default function EruditPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
-  
+  const { submitBuzzer, submitAnswer, joinRoom, requestAIRecheck } = useGameSocket()
+
   const userId = useUserStore((state) => state.id)
+  const username = useUserStore((state) => state.username)
+  
   const phase = useGameStore((state) => state.phase)
   const buzzerWinner = useGameStore((state) => state.buzzerWinner)
-  const setPhase = useGameStore((state) => state.setPhase)
-  const setQuestion = useGameStore((state) => state.setQuestion)
-  const updateScore = useGameStore((state) => state.updateScore)
-  const setGameEnd = useGameStore((state) => state.setGameEnd)
-  const resetQuestion = useGameStore((state) => state.resetQuestion)
+  const currentQuestion = useGameStore((state) => state.currentQuestion)
+  const questionNumber = useGameStore((state) => state.questionNumber)
+  const totalQuestions = useGameStore((state) => state.totalQuestions)
+  const scores = useGameStore((state) => state.scores)
+  
+  const isCorrect = useGameStore((state) => state.isCorrect)
+  const pointsEarned = useGameStore((state) => state.pointsEarned)
+  const answeredPlayerId = useGameStore((state) => state.answeredPlayerId)
+  const submittedAnswer = useGameStore((state) => state.submittedAnswer)
+  const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
 
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
+  const roomId = useGameStore((state) => state.roomId)
+  const mode = useGameStore((state) => state.mode)
+  const matchType = useGameStore((state) => state.matchType)
+
   const [timeRemaining, setTimeRemaining] = useState(15)
-  const [showResult, setShowResult] = useState(false)
-  const [lastResult, setLastResult] = useState<{ correct: boolean; answer: string; penalty?: number } | null>(null)
-  const [scores, setScores] = useState<Record<string, number>>({})
+  const [postResultData, setPostResultData] = useState<PlayerResultData[]>([])
 
-  const isMyBuzzer = buzzerWinner === userId
+  const isMyBuzzer = buzzerWinner === (userId || 'user')
 
-  // Start game with first question
+  // Join Room On Mount
   useEffect(() => {
-    const question = mockQuestions[0]
-    setCurrentQuestion(question)
-    setQuestion(question, 1, mockQuestions.length)
-    setPhase('question')
-    setTimeRemaining(question.timeLimit)
-  }, [setQuestion, setPhase])
+    let mounted = true
+    const actRoom = roomId || `room_${Date.now()}`
+    const actMode = mode || 'erudit'
+    const actMatch = matchType || 'solo'
 
-  // Timer countdown
+    if (mounted && phase === 'waiting') {
+      if (!roomId) {
+        useGameStore.getState().setRoom(actRoom, actMode, actMatch)
+      }
+      joinRoom(actRoom, actMode, actMatch).catch(console.error)
+    }
+    return () => { mounted = false }
+  }, [roomId, mode, matchType, phase, joinRoom])
+
+  // Auto navigation when finished
   useEffect(() => {
-    if (phase !== 'question' || !currentQuestion) return
+    if (phase === 'finished') {
+      router.push('/results')
+    }
+  }, [phase, router])
 
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          handleTimeUp()
-          return 0
+  // Process server-emitted answers into view state
+  useEffect(() => {
+    if (phase === 'results') {
+      const data: PlayerResultData[] = [
+        {
+          playerId: answeredPlayerId || 'unknown',
+          playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
+          answer: submittedAnswer,
+          isCorrect: isCorrect || false,
+          pointsDelta: pointsEarned,
+          newScore: scores[answeredPlayerId || 'unknown'] || 0,
+          isCurrentUser: answeredPlayerId === (userId || 'user'),
         }
-        return prev - 1
-      })
-    }, 1000)
+      ]
+      setPostResultData(data)
+    }
+  }, [phase, answeredPlayerId, isCorrect, pointsEarned, scores, username, userId, submittedAnswer])
 
-    return () => clearInterval(timer)
+  // Visual Timer Sync
+  useEffect(() => {
+    if (phase === 'question' && currentQuestion) {
+      setTimeRemaining(currentQuestion.timeLimit)
+    }
+    
+    // In answering phase, buzzer timeout is strict 10s via backend. Visual rep:
+    if (phase === 'answering') {
+      setTimeRemaining(10)
+    }
+
+    if (phase === 'question' || phase === 'answering') {
+      const timer = setInterval(() => {
+        setTimeRemaining((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      return () => clearInterval(timer)
+    }
   }, [phase, currentQuestion])
 
-  const handleTimeUp = useCallback(() => {
-    setPhase('results')
-    setLastResult({ correct: false, answer: 'Vaqt tugadi' })
-    setShowResult(true)
-    haptic('error')
-
-    setTimeout(() => {
-      moveToNextQuestion()
-    }, 2000)
-  }, [setPhase, haptic])
+  const handleBuzzerClick = useCallback(() => {
+    haptic('impact')
+    submitBuzzer()
+  }, [haptic, submitBuzzer])
 
   const handleAnswerSubmit = useCallback((answer: string) => {
-    const isCorrect = currentQuestion?.correctAnswer.toLowerCase() === answer.toLowerCase()
-    
-    if (isCorrect) {
-      haptic('success')
-      const points = currentQuestion?.points || 15
-      setScores((prev) => ({
-        ...prev,
-        [userId || 'user']: (prev[userId || 'user'] || 0) + points,
-      }))
-      updateScore(userId || 'user', points)
-      setLastResult({ correct: true, answer })
-    } else {
-      haptic('error')
-      // Apply penalty for wrong answer in Erudit mode
-      setScores((prev) => ({
-        ...prev,
-        [userId || 'user']: (prev[userId || 'user'] || 0) + WRONG_ANSWER_PENALTY,
-      }))
-      updateScore(userId || 'user', WRONG_ANSWER_PENALTY)
-      setLastResult({ correct: false, answer, penalty: WRONG_ANSWER_PENALTY })
-    }
-
-    setShowResult(true)
-
-    setTimeout(() => {
-      moveToNextQuestion()
-    }, 2500)
-  }, [currentQuestion, haptic, updateScore, userId])
-
-  const handleAnswerTimeUp = useCallback(() => {
-    setPhase('results')
-    // Apply penalty for no answer
-    setScores((prev) => ({
-      ...prev,
-      [userId || 'user']: (prev[userId || 'user'] || 0) + WRONG_ANSWER_PENALTY,
-    }))
-    updateScore(userId || 'user', WRONG_ANSWER_PENALTY)
-    setLastResult({ correct: false, answer: 'Javob vaqti tugadi', penalty: WRONG_ANSWER_PENALTY })
-    setShowResult(true)
-    haptic('error')
-
-    setTimeout(() => {
-      moveToNextQuestion()
-    }, 2000)
-  }, [setPhase, haptic, updateScore, userId])
-
-  const moveToNextQuestion = useCallback(() => {
-    setShowResult(false)
-    setLastResult(null)
-    resetQuestion()
-
-    const nextIndex = currentQuestionIndex + 1
-    if (nextIndex >= mockQuestions.length) {
-      setGameEnd(scores, { [userId || 'user']: scores[userId || 'user'] > 0 ? 20 : -10 }, userId || 'user')
-      router.push('/results')
-      return
-    }
-
-    setCurrentQuestionIndex(nextIndex)
-    const question = mockQuestions[nextIndex]
-    setCurrentQuestion(question)
-    setQuestion(question, nextIndex + 1, mockQuestions.length)
-    setPhase('question')
-    setTimeRemaining(question.timeLimit)
-  }, [currentQuestionIndex, scores, userId, setGameEnd, router, setQuestion, setPhase, resetQuestion])
+    haptic('impact')
+    useGameStore.getState().submitAnswer(answer) // Store locally so it displays on post-results nicely
+    submitAnswer(answer)
+  }, [haptic, submitAnswer])
 
   if (!currentQuestion) {
     return (
       <AppShell className="items-center justify-center">
-        <div className="text-muted-foreground">Yuklanmoqda...</div>
+         <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="text-muted-foreground font-medium animate-pulse">
+            Server kutilmoqda...
+          </div>
+        </div>
       </AppShell>
     )
   }
 
-  const currentScore = scores[userId || 'user'] || 0
-
   return (
     <AppShell>
       <TgSafeArea>
-        <div className="flex flex-col h-full">
-          {/* Header with timer */}
-          <div className="p-4 border-b border-border/30">
+        <div className="flex flex-col h-full bg-background relative overflow-hidden">
+          {/* Header */}
+          <div className="p-4 border-b border-border/30 bg-background/80 backdrop-blur-sm z-10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Erudit Kvarteti</span>
-                <Badge variant="outline" className="text-xs bg-rose-500/10 text-rose-500 border-rose-500/30">
-                  -10 jazo
+                <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Erudit</span>
+                <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/20 px-2 py-0 border">
+                  Poxod
                 </Badge>
               </div>
-              <span className={`text-sm font-medium ${currentScore < 0 ? 'text-destructive' : 'text-foreground'}`}>
-                {currentScore} ball
+              <span className="text-sm font-medium text-foreground">
+                {scores[userId || 'user'] || 0} ball
               </span>
             </div>
-            <ProgressTimer
-              timeRemaining={timeRemaining}
-              totalTime={currentQuestion.timeLimit}
-              variant="bar"
-            />
-          </div>
-
-          {/* Warning banner */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mx-4 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3"
-          >
-            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-            <span className="text-sm text-amber-600">
-              Noto&apos;g&apos;ri javob uchun -10 ball olinadi!
-            </span>
-          </motion.div>
-
-          {/* Question */}
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            <AnimatePresence mode="wait">
-              <QuestionDisplay
-                key={currentQuestion.id}
-                question={currentQuestion}
-                questionNumber={currentQuestionIndex + 1}
-                totalQuestions={mockQuestions.length}
+            {(phase === 'question' || phase === 'answering') && (
+              <ProgressTimer
+                timeRemaining={timeRemaining}
+                totalTime={phase === 'answering' ? 10 : currentQuestion.timeLimit}
+                variant="bar"
               />
-            </AnimatePresence>
+            )}
           </div>
 
-          {/* Buzzer area */}
-          {phase === 'question' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center gap-4 pb-8"
-            >
-              <p className="text-sm text-muted-foreground">
-                Ishonchingiz komil bo&apos;lsagina bosing
-              </p>
-              <BuzzerButton />
-            </motion.div>
-          )}
+          {/* Main Stage */}
+          <div className="flex-1 flex flex-col relative z-0">
+            {/* Split layout: Top half question, Bottom half buzzer/input */}
+            <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30">
+              <QuestionDisplay
+                question={currentQuestion}
+                questionNumber={questionNumber}
+                totalQuestions={totalQuestions}
+                compact
+              />
+            </div>
+
+            <div className="h-[55%] relative w-full bg-card/20">
+              {/* Buzzer Phase */}
+              <AnimatePresence>
+                {phase === 'question' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.05 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-card/30"
+                  >
+                    <BuzzerButton
+                      onPress={handleBuzzerClick}
+                      disabled={false}
+                      className="shadow-[0_0_40px_-10px_rgba(var(--primary),0.3)] hover:shadow-[0_0_60px_-10px_rgba(var(--primary),0.5)] transition-shadow duration-500"
+                    />
+                    
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-8 flex items-center justify-center p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 max-w-xs"
+                    >
+                      <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mr-2" />
+                      <p className="text-[11px] leading-tight text-amber-600/90 font-medium">
+                        Diqqat: Noto'g'ri javob yoki vaqtida javob bermaslik <strong className="text-amber-500">-10 ball</strong> bilan jazolanadi!
+                      </p>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Answer Input Phase */}
+              <AnimatePresence>
+                {phase === 'answering' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20, transition: { duration: 0.15 } }}
+                    className="absolute inset-0 z-20 bg-background/80 backdrop-blur-md flex flex-col justify-end"
+                  >
+                    {isMyBuzzer ? (
+                      <div className="w-full max-w-md mx-auto rounded-t-3xl bg-card border-t border-x border-border shadow-2xl p-4 pb-8 h-full flex flex-col">
+                        <div className="flex items-center justify-center gap-2 mb-6 mt-2">
+                          <div className="w-12 h-1 bg-border/50 rounded-full mx-auto" />
+                        </div>
+                        <div className="text-center mb-6">
+                          <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
+                            Sizning navbatingiz
+                          </p>
+                          <h3 className="text-xl font-bold">Javobingizni kiriting</h3>
+                        </div>
+                        <div className="flex-1">
+                          <AnswerInput
+                            timeLimit={10}
+                            onSubmit={handleAnswerSubmit}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-card/80 backdrop-blur-sm z-30">
+                        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                        </div>
+                        <p className="text-xl font-semibold text-foreground">Raqib o'ylamoqda...</p>
+                        <p className="text-sm text-muted-foreground mt-2">10 soniya vaqti bor</p>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              
+              {/* Results Phase */}
+              <AnimatePresence>
+                {phase === 'results' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-30 bg-background flex flex-col"
+                  >
+                    <PostQuestionResult
+                      mode="erudit"
+                      correctAnswer={globalCorrectAnswer || ''}
+                      results={postResultData}
+                      questionText={currentQuestion.text}
+                      onContinue={() => {}}
+                      onAppeal={(playerId, answer) => requestAIRecheck(currentQuestion.id, answer)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
-
-        {/* Answer input overlay */}
-        <AnimatePresence>
-          {phase === 'answering' && isMyBuzzer && (
-            <AnswerInput
-              timeLimit={10}
-              onSubmit={handleAnswerSubmit}
-              onTimeUp={handleAnswerTimeUp}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Result overlay */}
-        <BlurOverlay show={showResult}>
-          {lastResult && (
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="flex flex-col items-center gap-4"
-            >
-              {lastResult.correct ? (
-                <>
-                  <CheckCircle2 className="h-16 w-16 text-emerald-500" />
-                  <span className="text-xl font-semibold text-emerald-500">To&apos;g&apos;ri!</span>
-                  <span className="text-lg font-bold text-emerald-500">+{currentQuestion.points} ball</span>
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-16 w-16 text-destructive" />
-                  <span className="text-xl font-semibold text-destructive">Noto&apos;g&apos;ri</span>
-                  {lastResult.penalty && (
-                    <span className="text-lg font-bold text-destructive">{lastResult.penalty} ball</span>
-                  )}
-                  <span className="text-sm text-muted-foreground">
-                    Javob: {currentQuestion.correctAnswer}
-                  </span>
-                </>
-              )}
-            </motion.div>
-          )}
-        </BlurOverlay>
       </TgSafeArea>
     </AppShell>
   )

@@ -15,28 +15,31 @@ interface UseBuzzerReturn {
 
 export function useBuzzer(): UseBuzzerReturn {
   const userId = useUserStore((state) => state.id)
-  const phase = useGameStore((state) => state.phase)
-  const buzzerWinner = useGameStore((state) => state.buzzerWinner)
-  const buzzerLocked = useGameStore((state) => state.buzzerLocked)
+  const currentPhase = useGameStore((state) => state.currentPhase)
+  const lockedPlayers = useGameStore((state) => state.lockedPlayers)
+  const buzzerLockedBy = useGameStore((state) => state.buzzerLockedBy)
   const pressBuzzerAction = useGameStore((state) => state.pressBuzzer)
 
-  const canPress = phase === 'question' && !buzzerLocked && !buzzerWinner
-  const isWinner = buzzerWinner === userId
-  const isLocked = buzzerLocked
+  const canPress = currentPhase === 'action' && !lockedPlayers.includes(userId || '') && !buzzerLockedBy
+  const isWinner = buzzerLockedBy === userId
+  const isLocked = !!buzzerLockedBy
 
   const pressBuzzer = useCallback(() => {
     if (!canPress || !userId) return
     
-    const timestamp = Date.now()
-    pressBuzzerAction(userId, timestamp)
+    // Emit to server
+    import('@/services/game-socket').then(({ getGameSocket }) => {
+      getGameSocket().submitBuzzer(userId, Date.now())
+    })
+    
     triggerHaptic('heavy')
-  }, [canPress, userId, pressBuzzerAction])
+  }, [canPress, userId])
 
   return {
     canPress,
     isWinner,
     isLocked,
     pressBuzzer,
-    buzzerWinner,
+    buzzerWinner: buzzerLockedBy,
   }
 }

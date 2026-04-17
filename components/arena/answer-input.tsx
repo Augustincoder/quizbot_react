@@ -9,6 +9,9 @@ import { ProgressTimer } from './progress-timer'
 import { cn } from '@/lib/utils'
 import { triggerHaptic } from '@/lib/telegram'
 
+import { useGameStore } from '@/store/game-store'
+import { useUserStore } from '@/store/user-store'
+
 interface AnswerInputProps {
   timeLimit: number
   onSubmit: (answer: string) => void
@@ -28,9 +31,25 @@ export function AnswerInput({
   const [timeRemaining, setTimeRemaining] = useState(timeLimit)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const currentPhase = useGameStore((state) => state.currentPhase)
+  const mode = useGameStore((state) => state.mode)
+  const buzzerLockedBy = useGameStore((state) => state.buzzerLockedBy)
+  const userId = useUserStore((state) => state.id)
+
+  const isZakovat = mode === 'zakovat'
+  
+  if (!isZakovat && (currentPhase !== 'input' || buzzerLockedBy !== userId)) {
+     return null;
+  }
+
   useEffect(() => {
-    // Focus input on mount
-    inputRef.current?.focus()
+    // Focus input on mount, after a slight delay to let Framer Motion animations play out
+    // and to ensure mobile WebView has time to paint before focusing
+    const focusTimer = setTimeout(() => {
+      inputRef.current?.focus()
+    }, 150)
+    
+    return () => clearTimeout(focusTimer)
   }, [])
 
   useEffect(() => {
