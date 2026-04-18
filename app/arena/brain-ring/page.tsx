@@ -221,6 +221,7 @@ export default function BrainRingPage() {
                           <AnswerInput
                             timeLimit={10}
                             onSubmit={handleAnswerSubmit}
+                            onTimeUp={() => handleAnswerSubmit('')}
                           />
                         </div>
                       </div>

@@ -32,6 +32,7 @@ export function useGameSocket(): UseGameSocketReturn {
   
   const setPlayers = useGameStore((state) => state.setPlayers)
   const setPhase = useGameStore((state) => state.setPhase)
+  const setCurrentPhase = useGameStore((state) => state.setCurrentPhase)
   const setQuestion = useGameStore((state) => state.setQuestion)
   const pressBuzzer = useGameStore((state) => state.pressBuzzer)
   const setAnswerResult = useGameStore((state) => state.setAnswerResult)
@@ -54,6 +55,9 @@ export function useGameSocket(): UseGameSocketReturn {
       const data = payload as QuestionStartPayload
       setQuestion(data.question, data.questionNumber, data.totalQuestions)
       setPhase('question')
+      // Legacy backend path does not emit `game:phase_action`.
+      // Unlock interactions immediately; modern path will overwrite to `reading` via `game:question`.
+      setCurrentPhase('action')
     }
 
     const onBuzzerResult = (payload: any) => {
@@ -98,14 +102,49 @@ export function useGameSocket(): UseGameSocketReturn {
       useGameStore.getState().setZakovatResults(payload.results, payload.correctAnswer)
     }
 
+    const onZakovatRushResult = (payload: any) => {
+      // Modern backend emits `zakovat:rush_result` without correctAnswer.
+      // Use `currentQuestion.correctAnswer` (already normalized) as the source of truth.
+      const correctAnswer = useGameStore.getState().currentQuestion?.correctAnswer ?? ''
+      const rankedCorrect = Array.isArray(payload?.rankedCorrect) ? payload.rankedCorrect : []
+      const results = rankedCorrect.map((r: any) => ({
+        playerId: r.userId,
+        isCorrect: true,
+        pointsEarned: 1,
+      }))
+      useGameStore.getState().setZakovatResults(results, correctAnswer)
+      // Scores may be included; keep the scoreboard in sync.
+      if (Array.isArray(payload?.scores)) {
+        const scoresMap: Record<string, number> = {}
+        payload.scores.forEach((s: any) => { scoresMap[s.userId] = s.score })
+        useGameStore.getState().setScores(scoresMap)
+      }
+    }
+
     const onGameEnd = (payload: any) => {
       const data = payload as GameEndPayload
       setGameEnd(data.finalScores, data.mmrChanges, data.winner)
     }
 
     const onGameQuestion = (payload: any) => {
+      console.log('🔥 [game:question] RAW PAYLOAD =>', payload)
+      
+      let safeQuestion = payload.question
+      
+      // Fallback: If backend is running old code without restart and sends a string instead of an object
+      if (typeof safeQuestion === 'string') {
+        safeQuestion = {
+          id: `q_${payload.index}`,
+          text: safeQuestion,
+          category: 'General',
+          difficulty: 'medium',
+          timeLimit: 15, // default
+          points: payload.pointValue || 1,
+        }
+      }
+
       useGameStore.getState().setQuestion(
-        payload.question, 
+        safeQuestion, 
         payload.index + 1, 
         payload.total, 
         payload.readTimerMs
@@ -117,8 +156,11 @@ export function useGameSocket(): UseGameSocketReturn {
     }
 
     const onBuzzerLocked = (payload: any) => {
-      useGameStore.getState().setBuzzerLockedBy(payload.userId)
-      useGameStore.getState().setCurrentPhase('input')
+      const state = useGameStore.getState()
+      state.setBuzzerLockedBy(payload.userId)
+      state.setCurrentPhase('input')
+      // Bridge the modern backend event to the legacy UI state
+      state.pressBuzzer(payload.userId, Date.now())
     }
 
     const onBuzzerReactivate = (payload: any) => {
@@ -153,6 +195,7 @@ export function useGameSocket(): UseGameSocketReturn {
     socket.on('ai_recheck_result', onAiRecheckResult)
     socket.on('peer_vote_result', onPeerVoteResult)
     socket.on('zakovat_results', onZakovatResults)
+    socket.on('zakovat:rush_result', onZakovatRushResult)
     socket.on('game_end', onGameEnd)
     
     socket.on('game:question', onGameQuestion)
@@ -170,6 +213,7 @@ export function useGameSocket(): UseGameSocketReturn {
       socket.off('ai_recheck_result', onAiRecheckResult)
       socket.off('peer_vote_result', onPeerVoteResult)
       socket.off('zakovat_results', onZakovatResults)
+      socket.off('zakovat:rush_result', onZakovatRushResult)
       socket.off('game_end', onGameEnd)
       
       socket.off('game:question', onGameQuestion)
@@ -183,6 +227,7 @@ export function useGameSocket(): UseGameSocketReturn {
     userId,
     setPlayers,
     setPhase,
+    setCurrentPhase,
     setQuestion,
     pressBuzzer,
     setAnswerResult,

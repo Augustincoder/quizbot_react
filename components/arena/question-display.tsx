@@ -41,7 +41,7 @@ export function QuestionDisplay({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        className="text-xl font-medium leading-relaxed text-foreground text-center text-balance max-w-md"
+        className="text-2xl md:text-3xl font-semibold leading-relaxed text-foreground text-center text-balance max-w-2xl"
       >
         {question.text}
       </motion.h2>

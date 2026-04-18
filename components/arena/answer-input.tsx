@@ -35,12 +35,11 @@ export function AnswerInput({
   const mode = useGameStore((state) => state.mode)
   const buzzerLockedBy = useGameStore((state) => state.buzzerLockedBy)
   const userId = useUserStore((state) => state.id)
+  const activeUserId = userId || 'user'
 
   const isZakovat = mode === 'zakovat'
   
-  if (!isZakovat && (currentPhase !== 'input' || buzzerLockedBy !== userId)) {
-     return null;
-  }
+
 
   useEffect(() => {
     // Focus input on mount, after a slight delay to let Framer Motion animations play out
@@ -75,6 +74,10 @@ export function AnswerInput({
     
     triggerHaptic('medium')
     onSubmit(answer.trim())
+  }
+
+  if (!isZakovat && (currentPhase !== 'input' || buzzerLockedBy !== activeUserId)) {
+     return null;
   }
 
   return (

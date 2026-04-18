@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { GameMode, MatchType, GamePhase, Question, AIRecheckResult } from '@/types/game'
 import type { Player } from '@/types/user'
+import { normalizeQuestion } from '@/lib/normalize-question'
 
 interface GameState {
   // Room
@@ -145,8 +146,8 @@ export const useGameStore = create<GameState>()((set) => ({
   
   setCurrentPhase: (phase) => set({ currentPhase: phase }),
 
-  setQuestion: (question, questionNumber, totalQuestions, dynamicTimerMs = 15000) => set({
-    currentQuestion: question,
+  setQuestion: (question, questionNumber, totalQuestions, dynamicTimerMs = 15000) => set((state) => ({
+    currentQuestion: normalizeQuestion(question, state.mode, { questionNumber }),
     questionNumber,
     totalQuestions,
     dynamicTimerMs,
@@ -165,7 +166,7 @@ export const useGameStore = create<GameState>()((set) => ({
     aiRecheckResult: null,
     peerVoteActive: false,
     peerVotes: {},
-  }),
+  })),
   
   setDynamicTimerMs: (ms) => set({ dynamicTimerMs: ms }),
   setLockedPlayers: (players) => set({ lockedPlayers: players }),

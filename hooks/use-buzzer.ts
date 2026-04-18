@@ -15,25 +15,26 @@ interface UseBuzzerReturn {
 
 export function useBuzzer(): UseBuzzerReturn {
   const userId = useUserStore((state) => state.id)
+  const activeUserId = userId || 'user'
   const currentPhase = useGameStore((state) => state.currentPhase)
   const lockedPlayers = useGameStore((state) => state.lockedPlayers)
   const buzzerLockedBy = useGameStore((state) => state.buzzerLockedBy)
   const pressBuzzerAction = useGameStore((state) => state.pressBuzzer)
 
-  const canPress = currentPhase === 'action' && !lockedPlayers.includes(userId || '') && !buzzerLockedBy
-  const isWinner = buzzerLockedBy === userId
+  const canPress = currentPhase === 'action' && !lockedPlayers.includes(activeUserId) && !buzzerLockedBy
+  const isWinner = buzzerLockedBy === activeUserId
   const isLocked = !!buzzerLockedBy
 
   const pressBuzzer = useCallback(() => {
-    if (!canPress || !userId) return
+    if (!canPress) return
     
     // Emit to server
     import('@/services/game-socket').then(({ getGameSocket }) => {
-      getGameSocket().submitBuzzer(userId, Date.now())
+      getGameSocket().submitBuzzer(activeUserId, Date.now())
     })
     
     triggerHaptic('heavy')
-  }, [canPress, userId])
+  }, [canPress, activeUserId])
 
   return {
     canPress,
