@@ -8,6 +8,7 @@ export interface Question {
   category: string
   difficulty: 'easy' | 'medium' | 'hard'
   correctAnswer: string
+  explanation?: string
   options?: string[] // For Kahoot mode
   timeLimit: number // in seconds
   points: number

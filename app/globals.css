@@ -162,3 +162,21 @@
     animation: none;
   }
 }
+
+/* Scrollable panels (e.g. arena question / results) */
+@layer utilities {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+    border-radius: 9999px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

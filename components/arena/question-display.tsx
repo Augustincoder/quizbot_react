@@ -44,7 +44,7 @@ function QuestionDisplayComponent({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        className="text-lg md:text-xl leading-relaxed text-gray-800 font-medium text-left md:text-center text-balance max-w-2xl break-words"
+        className="text-lg md:text-xl leading-relaxed text-gray-800 font-medium text-left md:text-center break-words whitespace-pre-wrap text-balance max-w-2xl max-h-[45vh] overflow-y-auto custom-scrollbar"
       >
         {question.text}
       </motion.h2>

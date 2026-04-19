@@ -10,6 +10,7 @@ import { ProgressTimer } from '@/components/arena/progress-timer'
 import { BuzzerButton } from '@/components/arena/buzzer-button'
 import { AnswerInput } from '@/components/arena/answer-input'
 import { PostQuestionResult } from '@/components/arena/post-question-result'
+import { Button } from '@/components/ui/button'
 import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
@@ -46,7 +47,7 @@ export default function BrainRingPage() {
   const username = useUserStore((state) => state.username)
 
   const { roomId, mode, matchType } = useRoomConfig()
-  const { phase } = useGamePhase()
+  const { phase, currentPhase } = useGamePhase()
   const { buzzerWinner } = useBuzzerState()
   const currentQuestion = useCurrentQuestion()
   const { questionNumber, totalQuestions } = useQuestionProgress()
@@ -133,6 +134,15 @@ export default function BrainRingPage() {
     [haptic, submitAnswer],
   )
 
+  const handleResultsContinue = useCallback(() => {
+    import('@/services/game-socket').then(({ getGameSocket }) => {
+      getGameSocket().emit('game:leaderboard_ack', {
+        roomCode: roomId,
+        userId: uid,
+      })
+    })
+  }, [roomId, uid])
+
   if (!currentQuestion) {
     return (
       <AppShell className="items-center justify-center">
@@ -144,18 +154,21 @@ export default function BrainRingPage() {
     )
   }
 
+  const showHeaderTimer =
+    (phase === 'question' || phase === 'answering') && currentPhase !== 'input'
+
   return (
     <AppShell>
-      <TgSafeArea>
-        <div className="flex flex-col h-full bg-background relative overflow-hidden">
-          <div className="p-4 border-b border-border/30 bg-background/80 backdrop-blur-sm z-10">
+      <TgSafeArea className="min-h-0">
+        <div className="flex flex-col h-[100dvh] min-h-0 w-full overflow-hidden bg-background relative">
+          <div className="shrink-0 p-4 border-b border-border/30 bg-background/80 backdrop-blur-sm z-10">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                 Brain-Ring
               </span>
               <span className="text-sm font-medium text-foreground">{myScore} ball</span>
             </div>
-            {(phase === 'question' || phase === 'answering') && (
+            {showHeaderTimer && (
               <ProgressTimer
                 timeRemaining={timeRemaining}
                 totalTime={phase === 'answering' ? 10 : currentQuestion.timeLimit}
@@ -164,8 +177,8 @@ export default function BrainRingPage() {
             )}
           </div>
 
-          <div className="flex-1 flex flex-col relative z-0">
-            <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30 overflow-hidden min-w-0 break-word">
+          <div className="flex-1 min-h-0 overflow-y-auto pb-32 custom-scrollbar">
+            <div className="p-4 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30 min-w-0">
               <QuestionDisplay
                 question={currentQuestion}
                 questionNumber={questionNumber}
@@ -174,88 +187,103 @@ export default function BrainRingPage() {
               />
             </div>
 
-            <div className="h-[55%] relative w-full bg-card/20">
-              <AnimatePresence>
-                {phase === 'question' && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 1.05 }}
-                    transition={{ duration: 0.2 }}
-                    className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-card/30"
-                  >
-                    <BuzzerButton onPress={handleBuzzerClick} disabled={false} />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            <AnimatePresence mode="wait">
+              {phase === 'question' && (
+                <motion.div
+                  key="buzzer-hint"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col items-center py-10 px-6 text-center"
+                >
+                  <p className="text-sm text-muted-foreground max-w-xs">
+                    Savolni o&apos;qing. Tayyor bo&apos;lgach, pastdagi buzzer tugmasini bosing.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-              <AnimatePresence>
-                {phase === 'answering' && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20, transition: { duration: 0.15 } }}
-                    className="absolute inset-0 z-20 bg-background/80 backdrop-blur-md flex flex-col justify-end"
-                  >
-                    {isMyBuzzer ? (
-                      <div className="w-full max-w-md mx-auto rounded-t-3xl bg-card border-t border-x border-border shadow-2xl p-4 pb-8 h-full flex flex-col">
-                        <div className="flex items-center justify-center gap-2 mb-6 mt-2">
-                          <div className="w-12 h-1 bg-border/50 rounded-full mx-auto" />
-                        </div>
-                        <div className="text-center mb-6">
-                          <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
-                            Sizning navbatingiz
-                          </p>
-                          <h3 className="text-xl font-bold">Javobingizni kiriting</h3>
-                        </div>
-                        <div className="flex-1">
-                          <AnswerInput
-                            timeLimit={10}
-                            onSubmit={handleAnswerSubmit}
-                            onTimeUp={() => handleAnswerSubmit('')}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-card/80 backdrop-blur-sm z-30">
-                        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                        </div>
-                        <p className="text-xl font-semibold text-foreground">Raqib o&apos;ylamoqda...</p>
-                        <p className="text-sm text-muted-foreground mt-2">10 soniya vaqti bor</p>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            <AnimatePresence mode="wait">
+              {phase === 'answering' && !isMyBuzzer && (
+                <motion.div
+                  key="opponent-wait"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex flex-col items-center justify-center py-12 px-6"
+                >
+                  <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  </div>
+                  <p className="text-xl font-semibold text-foreground">Raqib o&apos;ylamoqda...</p>
+                  <p className="text-sm text-muted-foreground mt-2">10 soniya ichida javob beradi</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-              <AnimatePresence>
-                {phase === 'results' && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 z-30 bg-background flex flex-col"
-                  >
-                    <PostQuestionResult
-                      mode="brain-ring"
-                      correctAnswer={globalCorrectAnswer || ''}
-                      results={postResultData}
-                      questionText={currentQuestion.text}
-                      onContinue={() => {
-                        import('@/services/game-socket').then(({ getGameSocket }) => {
-                          getGameSocket().emit('game:leaderboard_ack', {
-                            roomCode: roomId,
-                            userId: uid,
-                          })
-                        })
-                      }}
-                      onAppeal={(playerId, answer) => requestAIRecheck(currentQuestion.id, answer)}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            <AnimatePresence mode="wait">
+              {phase === 'results' && (
+                <motion.div
+                  key="results"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.22 }}
+                  className="px-3 pb-6 pt-2"
+                >
+                  <PostQuestionResult
+                    mode="brain-ring"
+                    correctAnswer={globalCorrectAnswer || ''}
+                    results={postResultData}
+                    questionText={currentQuestion.text}
+                    explanation={currentQuestion.explanation}
+                    hideContinueButton
+                    onContinue={handleResultsContinue}
+                    onAppeal={(playerId, answer) => requestAIRecheck(currentQuestion.id, answer)}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div
+            className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md p-4 border-t z-50 shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.1)]"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 16px)' }}
+          >
+            {phase === 'question' && (
+              <div className="flex justify-center py-1">
+                <BuzzerButton onPress={handleBuzzerClick} disabled={false} />
+              </div>
+            )}
+
+            {phase === 'answering' && isMyBuzzer && (
+              <div className="w-full max-w-lg mx-auto">
+                <div className="text-center mb-3">
+                  <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
+                    Sizning navbatingiz
+                  </p>
+                  <h3 className="text-lg font-bold">Javobingizni kiriting</h3>
+                </div>
+                <AnswerInput
+                  timeLimit={10}
+                  onSubmit={handleAnswerSubmit}
+                  onTimeUp={() => handleAnswerSubmit('')}
+                  className="relative left-auto right-auto bottom-auto z-10 border-0 bg-transparent backdrop-blur-none px-0 pt-0 pb-0 shadow-none"
+                />
+              </div>
+            )}
+
+            {phase === 'results' && (
+              <Button
+                type="button"
+                onClick={handleResultsContinue}
+                className="w-full h-12 rounded-xl text-base font-medium"
+              >
+                Davom etish
+              </Button>
+            )}
           </div>
         </div>
       </TgSafeArea>
