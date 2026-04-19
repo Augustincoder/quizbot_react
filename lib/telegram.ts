@@ -23,6 +23,7 @@ interface TelegramWebApp {
     notificationOccurred: (type: 'error' | 'success' | 'warning') => void
     selectionChanged: () => void
   }
+  initData: string
   MainButton: {
     text: string
     color: string

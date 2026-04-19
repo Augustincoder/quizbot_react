@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AppShell } from '@/components/layout/app-shell'
 import { TgSafeArea } from '@/components/layout/tg-safe-area'
 import { QuestionDisplay } from '@/components/arena/question-display'
 import { ProgressTimer } from '@/components/arena/progress-timer'
-import { BuzzerButton } from '@/components/arena/buzzer-button'
+import { BuzzerButton } from '@/components/arena/buzze  r-button'
 import { AnswerInput } from '@/components/arena/answer-input'
 import { PostQuestionResult } from '@/components/arena/post-question-result'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
+import { useTimer } from '@/hooks/use-timer'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 
 // Render specific result struct
@@ -32,6 +33,7 @@ export default function EruditPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
   const { submitBuzzer, submitAnswer, joinRoom, requestAIRecheck } = useGameSocket()
+  const { timeRemaining } = useTimer()
 
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
@@ -53,7 +55,6 @@ export default function EruditPage() {
   const mode = useGameStore((state) => state.mode)
   const matchType = useGameStore((state) => state.matchType)
 
-  const [timeRemaining, setTimeRemaining] = useState(15)
   const [postResultData, setPostResultData] = useState<PlayerResultData[]>([])
 
   const isMyBuzzer = buzzerWinner === (userId || 'user')
@@ -81,56 +82,44 @@ export default function EruditPage() {
     }
   }, [phase, router])
 
-  // Process server-emitted answers into view state
-  useEffect(() => {
-    if (phase === 'results') {
-      const data: PlayerResultData[] = [
-        {
-          playerId: answeredPlayerId || 'unknown',
-          playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
-          answer: submittedAnswer,
-          isCorrect: isCorrect || false,
-          pointsDelta: pointsEarned,
-          newScore: scores[answeredPlayerId || 'unknown'] || 0,
-          isCurrentUser: answeredPlayerId === (userId || 'user'),
-        }
-      ]
-      setPostResultData(data)
-    }
+  // Process server-emitted answers into view state - memoized
+  const processedResultData = useMemo<PlayerResultData[]>(() => {
+    if (phase !== 'results') return []
+    
+    return [
+      {
+        playerId: answeredPlayerId || 'unknown',
+        playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
+        answer: submittedAnswer,
+        isCorrect: isCorrect || false,
+        pointsDelta: pointsEarned,
+        newScore: scores[answeredPlayerId || 'unknown'] || 0,
+        isCurrentUser: answeredPlayerId === (userId || 'user'),
+      }
+    ]
   }, [phase, answeredPlayerId, isCorrect, pointsEarned, scores, username, userId, submittedAnswer])
 
-  // Visual Timer Sync
+  // Sync processed data to state only when it changes
   useEffect(() => {
-    if (phase === 'question' && currentQuestion) {
-      setTimeRemaining(currentQuestion.timeLimit)
+    if (processedResultData.length > 0) {
+      setPostResultData(processedResultData)
     }
-    
-    // In answering phase, buzzer timeout is strict 10s via backend. Visual rep:
-    if (phase === 'answering') {
-      setTimeRemaining(10)
-    }
+  }, [processedResultData])
 
-    if (phase === 'question' || phase === 'answering') {
-      const timer = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-      return () => clearInterval(timer)
-    }
+  // Calculate total time for timer display based on phase
+  const totalTime = useMemo(() => {
+    if (phase === 'answering') return 10
+    if (phase === 'question' && currentQuestion) return currentQuestion.timeLimit
+    return 15
   }, [phase, currentQuestion])
 
   const handleBuzzerClick = useCallback(() => {
-    haptic('impact')
+    haptic('medium')
     submitBuzzer()
   }, [haptic, submitBuzzer])
 
   const handleAnswerSubmit = useCallback((answer: string) => {
-    haptic('impact')
+    haptic('medium')
     useGameStore.getState().submitAnswer(answer) // Store locally so it displays on post-results nicely
     submitAnswer(answer)
   }, [haptic, submitAnswer])
@@ -241,6 +230,7 @@ export default function EruditPage() {
                           <AnswerInput
                             timeLimit={10}
                             onSubmit={handleAnswerSubmit}
+                            onTimeUp={() => handleAnswerSubmit('')}
                           />
                         </div>
                       </div>

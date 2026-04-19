@@ -123,3 +123,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Performance-optimized CSS animations to replace Framer Motion infinite loops */
+@keyframes buzzer-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.5;
+  }
+}
+
+.animate-buzzer-pulse {
+  animation: buzzer-pulse 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .animate-buzzer-pulse,
+  .animate-glow-pulse {
+    animation: none;
+  }
+}

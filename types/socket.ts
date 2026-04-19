@@ -24,6 +24,7 @@ export type SocketEventType =
   | 'game_end'
   | 'error'
   | 'zakovat_results'
+  | 'zakovat:rush_result'
   | 'game:question'
   | 'game:phase_action'
   | 'game:round_result'

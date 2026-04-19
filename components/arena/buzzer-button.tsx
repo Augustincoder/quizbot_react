@@ -8,9 +8,10 @@ import { useBuzzer } from '@/hooks/use-buzzer'
 interface BuzzerButtonProps {
   className?: string
   disabled?: boolean
+  onPress?: () => void
 }
 
-export function BuzzerButton({ className, disabled }: BuzzerButtonProps) {
+export function BuzzerButton({ className, disabled, onPress }: BuzzerButtonProps) {
   const { canPress, isWinner, pressBuzzer } = useBuzzer()
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([])
 
@@ -40,7 +41,8 @@ export function BuzzerButton({ className, disabled }: BuzzerButtonProps) {
     }, 600)
 
     pressBuzzer()
-  }, [disabled, canPress, pressBuzzer])
+    onPress?.()
+  }, [disabled, canPress, pressBuzzer, onPress])
 
   const isDisabled = disabled || !canPress
 
@@ -49,27 +51,19 @@ export function BuzzerButton({ className, disabled }: BuzzerButtonProps) {
       onClick={handlePress}
       onTouchStart={handlePress}
       disabled={isDisabled}
-      animate={
-        !isDisabled && !isWinner
-          ? { scale: [1, 1.02, 1] }
-          : {}
-      }
-      transition={{
-        duration: 2,
-        repeat: Infinity,
-        ease: 'easeInOut',
-      }}
+      whileTap={{ scale: 0.95 }}
       className={cn(
         'relative overflow-hidden',
         'w-[120px] h-[120px] rounded-full',
         'flex items-center justify-center',
         'transition-all duration-200',
         'touch-manipulation',
+        'shadow-md',
         isWinner
           ? 'bg-emerald-500/90 border-2 border-emerald-400/50 shadow-lg shadow-emerald-500/30'
           : isDisabled
           ? 'bg-muted/50 border-2 border-border/30'
-          : 'bg-primary/90 border-2 border-primary/20 shadow-lg shadow-primary/20',
+          : 'bg-primary/90 border-2 border-primary/20 shadow-lg shadow-primary/20 animate-buzzer-pulse',
         'active:scale-[0.95]',
         className
       )}
@@ -106,13 +100,9 @@ export function BuzzerButton({ className, disabled }: BuzzerButtonProps) {
         {isWinner ? 'Siz!' : 'Buzzer'}
       </span>
 
-      {/* Glow effect */}
+      {/* Glow effect - CSS animation instead of Framer Motion */}
       {!isDisabled && !isWinner && (
-        <motion.div
-          className="absolute inset-0 -z-10 rounded-full bg-primary/30 blur-xl"
-          animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-        />
+        <div className="absolute inset-0 -z-10 rounded-full bg-primary/30 blur-xl animate-glow-pulse" />
       )}
     </motion.button>
   )

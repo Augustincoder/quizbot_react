@@ -9,6 +9,7 @@ interface QuestionDisplayProps {
   questionNumber: number
   totalQuestions: number
   className?: string
+  compact?: boolean
 }
 
 export function QuestionDisplay({
@@ -16,6 +17,7 @@ export function QuestionDisplay({
   questionNumber,
   totalQuestions,
   className,
+  compact,
 }: QuestionDisplayProps) {
   return (
     <motion.div
@@ -41,7 +43,7 @@ export function QuestionDisplay({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4, delay: 0.1 }}
-        className="text-2xl md:text-3xl font-semibold leading-relaxed text-foreground text-center text-balance max-w-2xl"
+        className="text-lg md:text-xl leading-relaxed text-gray-800 font-medium text-left md:text-center text-balance max-w-2xl break-words"
       >
         {question.text}
       </motion.h2>

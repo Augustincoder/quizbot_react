@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AppShell } from '@/components/layout/app-shell'
@@ -14,6 +14,7 @@ import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
+import { useTimer } from '@/hooks/use-timer'
 import { Loader2 } from 'lucide-react'
 
 interface PlayerResultData {
@@ -30,6 +31,7 @@ export default function BrainRingPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
   const { submitBuzzer, submitAnswer, joinRoom, requestAIRecheck } = useGameSocket()
+  const { timeRemaining, progress } = useTimer()
 
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
@@ -51,7 +53,6 @@ export default function BrainRingPage() {
   const submittedAnswer = useGameStore((state) => state.submittedAnswer)
   const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
 
-  const [timeRemaining, setTimeRemaining] = useState(20)
   const [postResultData, setPostResultData] = useState<PlayerResultData[]>([])
 
   const isMyBuzzer = buzzerWinner === (userId || 'user')
@@ -79,57 +80,44 @@ export default function BrainRingPage() {
     }
   }, [phase, router])
 
-  // Process server-emitted answers into view state
-  useEffect(() => {
-    if (phase === 'results') {
-      const data: PlayerResultData[] = [
-        {
-          playerId: answeredPlayerId || 'unknown',
-          playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
-          answer: submittedAnswer,
-          isCorrect: isCorrect || false,
-          pointsDelta: pointsEarned,
-          newScore: scores[answeredPlayerId || 'unknown'] || 0,
-          isCurrentUser: answeredPlayerId === (userId || 'user'),
-        }
-      ]
-      setPostResultData(data)
-    }
+  // Process server-emitted answers into view state - memoized to prevent recalculation
+  const processedResultData = useMemo<PlayerResultData[]>(() => {
+    if (phase !== 'results') return []
+    
+    return [
+      {
+        playerId: answeredPlayerId || 'unknown',
+        playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
+        answer: submittedAnswer,
+        isCorrect: isCorrect || false,
+        pointsDelta: pointsEarned,
+        newScore: scores[answeredPlayerId || 'unknown'] || 0,
+        isCurrentUser: answeredPlayerId === (userId || 'user'),
+      }
+    ]
   }, [phase, answeredPlayerId, isCorrect, pointsEarned, scores, username, userId, submittedAnswer])
 
-  // Visual Timer Sync
+  // Sync processed data to state only when it changes
   useEffect(() => {
-    if (phase === 'question' && currentQuestion) {
-      setTimeRemaining(currentQuestion.timeLimit)
+    if (processedResultData.length > 0) {
+      setPostResultData(processedResultData)
     }
-    
-    // In answering phase, buzzer timeout is strict 10s backendside
-    if (phase === 'answering') {
-      setTimeRemaining(10)
-    }
+  }, [processedResultData])
 
-    if (phase === 'question' || phase === 'answering') {
-      const timer = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-      return () => clearInterval(timer)
-    }
+  // Calculate total time for timer display based on phase
+  const totalTime = useMemo(() => {
+    if (phase === 'answering') return 10
+    if (phase === 'question' && currentQuestion) return currentQuestion.timeLimit
+    return 20
   }, [phase, currentQuestion])
 
   const handleBuzzerClick = useCallback(() => {
-    haptic('impact')
+    haptic('medium')
     submitBuzzer()
   }, [haptic, submitBuzzer])
 
   const handleAnswerSubmit = useCallback((answer: string) => {
-    haptic('impact')
-    useGameStore.getState().submitAnswer(answer) 
+    haptic('medium')
     submitAnswer(answer)
   }, [haptic, submitAnswer])
 
@@ -169,7 +157,7 @@ export default function BrainRingPage() {
 
           <div className="flex-1 flex flex-col relative z-0">
             {/* Split layout */}
-            <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30">
+            <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30 overflow-hidden min-w-0 break-word">
               <QuestionDisplay
                 question={currentQuestion}
                 questionNumber={questionNumber}
@@ -252,7 +240,15 @@ export default function BrainRingPage() {
                       correctAnswer={globalCorrectAnswer || ''}
                       results={postResultData}
                       questionText={currentQuestion.text}
-                      onContinue={() => {}}
+                      onContinue={() => {
+                        // Emit leaderboard ack to advance to next question
+                        import('@/services/game-socket').then(({ getGameSocket }) => {
+                          getGameSocket().emit('game:leaderboard_ack', { 
+                            roomCode: roomId, 
+                            userId: userId || 'user' 
+                          })
+                        })
+                      }}
                       onAppeal={(playerId, answer) => requestAIRecheck(currentQuestion.id, answer)}
                     />
                   </motion.div>

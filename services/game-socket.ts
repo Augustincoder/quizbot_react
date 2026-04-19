@@ -83,14 +83,14 @@ export class GameSocket {
   }
 
   async submitBuzzer(playerId: string, timestamp: number): Promise<void> {
-    this.socket?.emit('buzzer:press', { roomCode: this.currentRoom, userId: 'user', timestamp })
+    this.socket?.emit('buzzer:press', { roomCode: this.currentRoom, userId: playerId, timestamp })
   }
 
   async submitAnswer(playerId: string, answer: string): Promise<void> {
     if (this.currentMode === 'zakovat') {
-       this.socket?.emit('zakovat:answer_submit', { roomCode: this.currentRoom, userId: 'user', answer })
+       this.socket?.emit('zakovat:answer_submit', { roomCode: this.currentRoom, userId: playerId, answer })
     } else {
-       this.socket?.emit('buzzer:answer_submit', { roomCode: this.currentRoom, userId: 'user', answer })
+       this.socket?.emit('buzzer:answer_submit', { roomCode: this.currentRoom, userId: playerId, answer })
     }
   }
 
@@ -100,6 +100,10 @@ export class GameSocket {
 
   startPeerVote(questionId: string, playerId: string, answer: string): void {
     this.socket?.emit('start_peer_vote', { questionId, answer })
+  }
+
+  emit(event: string, data: any): void {
+    this.socket?.emit(event, data)
   }
 }
 

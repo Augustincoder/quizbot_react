@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AppShell } from '@/components/layout/app-shell'
@@ -13,7 +13,8 @@ import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
-import { CheckCircle2, XCircle, Zap, Trophy, Loader2 } from 'lucide-react'
+import { useTimer } from '@/hooks/use-timer'
+import { CheckCircle2, XCircle, Zap, Loader2 } from 'lucide-react'
 
 interface RushSubmission {
   answer: string
@@ -26,6 +27,7 @@ export default function ZakovatPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
   const { submitAnswer, joinRoom } = useGameSocket()
+  const { timeRemaining } = useTimer()
 
   const userId = useUserStore((state) => state.id)
   
@@ -43,7 +45,6 @@ export default function ZakovatPage() {
   const mode = useGameStore((state) => state.mode)
   const matchType = useGameStore((state) => state.matchType)
 
-  const [timeRemaining, setTimeRemaining] = useState(60)
   const [hasAnswered, setHasAnswered] = useState(false)
   const [lastSubmission, setLastSubmission] = useState<RushSubmission | null>(null)
 
@@ -68,7 +69,6 @@ export default function ZakovatPage() {
     if (phase === 'question' && currentQuestion) {
       setHasAnswered(false)
       setLastSubmission(null)
-      setTimeRemaining(currentQuestion.timeLimit)
     }
     
     // Auto navigation when finished
@@ -77,22 +77,12 @@ export default function ZakovatPage() {
     }
   }, [phase, currentQuestion, router])
 
-  // Visual Timer Sync (Actual exact timer is server-side)
-  useEffect(() => {
-    if (phase !== 'question' || !currentQuestion) return
-
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [phase, currentQuestion])
+  // Memoize my result to prevent recalculation
+  const myResult = useMemo(() => {
+    return zakovatResults?.find((res) => res.playerId === (userId || 'user'))
+  }, [zakovatResults, userId])
+  
+  const isTimeUp = phase === 'results'
 
   // Handle rush answer submission
   const handleRushSubmit = useCallback(async (answer: string, clientTimestamp: number) => {
@@ -105,15 +95,11 @@ export default function ZakovatPage() {
       timestamp: clientTimestamp
     })
     
-    haptic('impact')
+    haptic('medium')
 
     // Submit answer to server. Does NOT calculate local correctness.
     await submitAnswer(answer)
   }, [currentQuestion, hasAnswered, submitAnswer, haptic])
-
-  // Check if we are in results phase and process our personal outcome
-  const myResult = zakovatResults?.find((res) => res.playerId === (userId || 'user'))
-  const isTimeUp = phase === 'results'
 
   if (!currentQuestion) {
     return (

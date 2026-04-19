@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AppShell } from '@/components/layout/app-shell'
@@ -14,6 +14,7 @@ import { useGameStore } from '@/store/game-store'
 import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
+import { useTimer } from '@/hooks/use-timer'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 // Mock opponent data (will be synced via RoomManager in Phase 4)
@@ -26,6 +27,7 @@ export default function KahootPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
   const { submitAnswer, joinRoom } = useGameSocket()
+  const { timeRemaining } = useTimer()
 
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
@@ -46,7 +48,6 @@ export default function KahootPage() {
   const submittedAnswer = useGameStore((state) => state.submittedAnswer)
   const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
 
-  const [timeRemaining, setTimeRemaining] = useState(20)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [correctIndex, setCorrectIndex] = useState<number | null>(null)
   
@@ -102,7 +103,7 @@ export default function KahootPage() {
         setKahootPhase('leaderboard')
       }, 2500)
 
-      return () => clearTimeout(timer)
+      return () => clearInterval(timer)
     }
   }, [phase, globalCorrectAnswer, currentQuestion, answeredPlayerId, pointsEarned])
 
@@ -113,32 +114,35 @@ export default function KahootPage() {
       setSelectedIndex(null)
       setCorrectIndex(null)
       setAnswered(false)
-      setTimeRemaining(currentQuestion.timeLimit)
     }
   }, [phase, currentQuestion])
 
-  // Visual Timer Sync
-  useEffect(() => {
-    if (phase !== 'question' || !currentQuestion || answered) return
-
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [phase, currentQuestion, answered])
+  // Memoize leaderboard entries to prevent recalculation
+  const leaderboardEntries = useMemo(() => {
+    if (kahootPhase !== 'leaderboard' || phase !== 'results') return []
+    
+    return [
+      {
+        playerId: userId || 'user',
+        playerName: username,
+        score: scores[userId || 'user'] || 0,
+        delta: lastPointsDelta[userId || 'user'] || 0,
+        isCurrentUser: true,
+      },
+      ...mockPlayers.map((p) => ({
+        playerId: p.id,
+        playerName: p.name,
+        score: scores[p.id] || 0,
+        delta: lastPointsDelta[p.id] || 0,
+      })),
+    ]
+  }, [kahootPhase, phase, userId, username, scores, lastPointsDelta])
 
   const handleSelectAnswer = useCallback(
     (index: number) => {
       if (answered || !currentQuestion || !currentQuestion.options) return
       
-      haptic('impact')
+      haptic('medium')
       setAnswered(true)
       setSelectedIndex(index)
       
@@ -164,22 +168,6 @@ export default function KahootPage() {
 
   // Inter-question Leaderboard Mode
   if (kahootPhase === 'leaderboard' && phase === 'results') {
-    const leaderboardEntries = [
-      {
-        playerId: userId || 'user',
-        playerName: username,
-        score: scores[userId || 'user'] || 0,
-        delta: lastPointsDelta[userId || 'user'] || 0,
-        isCurrentUser: true,
-      },
-      ...mockPlayers.map((p) => ({
-        playerId: p.id,
-        playerName: p.name,
-        score: scores[p.id] || 0,
-        delta: lastPointsDelta[p.id] || 0,
-      })),
-    ]
-
     return (
       <AppShell>
         <TgSafeArea>

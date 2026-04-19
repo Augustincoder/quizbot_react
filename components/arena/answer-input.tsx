@@ -30,6 +30,13 @@ export function AnswerInput({
   const [answer, setAnswer] = useState('')
   const [timeRemaining, setTimeRemaining] = useState(timeLimit)
   const inputRef = useRef<HTMLInputElement>(null)
+  const hasAnsweredRef = useRef(false)
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Reset timer when timeLimit prop changes
+  useEffect(() => {
+    setTimeRemaining(timeLimit)
+  }, [timeLimit])
 
   const currentPhase = useGameStore((state) => state.currentPhase)
   const mode = useGameStore((state) => state.mode)
@@ -52,31 +59,52 @@ export function AnswerInput({
   }, [])
 
   useEffect(() => {
-    if (disabled) return
+    if (disabled || hasAnsweredRef.current) return
 
-    const timer = setInterval(() => {
+    timerRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          clearInterval(timer)
-          onTimeUp()
+          if (timerRef.current) {
+            clearInterval(timerRef.current)
+            timerRef.current = null
+          }
+          // Defer onTimeUp to avoid setState during render
+          // Only trigger if user hasn't already submitted
+          if (!hasAnsweredRef.current) {
+            setTimeout(() => onTimeUp(), 0)
+          }
           return 0
         }
         return prev - 1
       })
     }, 1000)
 
-    return () => clearInterval(timer)
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
   }, [disabled, onTimeUp])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!answer.trim() || disabled) return
+    if (!answer.trim() || disabled || hasAnsweredRef.current) return
+    
+    // Mark as answered to prevent race conditions
+    hasAnsweredRef.current = true
+    
+    // Clear timer immediately to prevent onTimeUp from firing
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
     
     triggerHaptic('medium')
     onSubmit(answer.trim())
   }
 
-  if (!isZakovat && (currentPhase !== 'input' || buzzerLockedBy !== activeUserId)) {
+  if (isZakovat && (currentPhase !== 'input' || buzzerLockedBy !== activeUserId)) {
      return null;
   }
 
@@ -112,7 +140,7 @@ export function AnswerInput({
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Javobingizni yozing..."
           disabled={disabled}
-          className="flex-1 h-12 text-lg bg-card/50 border-border/50"
+          className="flex-1 h-12 text-lg bg-card/50 border-border/50 pl-14"
           autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
