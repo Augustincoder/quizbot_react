@@ -7,7 +7,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { TgSafeArea } from '@/components/layout/tg-safe-area'
 import { QuestionDisplay } from '@/components/arena/question-display'
 import { ProgressTimer } from '@/components/arena/progress-timer'
-import { BuzzerButton } from '@/components/arena/buzze  r-button'
+import { BuzzerButton } from '@/components/arena/buzzer-button'
 import { AnswerInput } from '@/components/arena/answer-input'
 import { PostQuestionResult } from '@/components/arena/post-question-result'
 import { Badge } from '@/components/ui/badge'
@@ -16,9 +16,17 @@ import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
 import { useTimer } from '@/hooks/use-timer'
+import {
+  useGamePhase,
+  useCurrentQuestion,
+  useQuestionProgress,
+  useBuzzerState,
+  useAnswerState,
+  usePlayerScore,
+  useRoomConfig,
+} from '@/hooks/use-game-selectors'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 
-// Render specific result struct
 interface PlayerResultData {
   playerId: string
   playerName: string
@@ -37,29 +45,28 @@ export default function EruditPage() {
 
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
-  
-  const phase = useGameStore((state) => state.phase)
-  const buzzerWinner = useGameStore((state) => state.buzzerWinner)
-  const currentQuestion = useGameStore((state) => state.currentQuestion)
-  const questionNumber = useGameStore((state) => state.questionNumber)
-  const totalQuestions = useGameStore((state) => state.totalQuestions)
-  const scores = useGameStore((state) => state.scores)
-  
-  const isCorrect = useGameStore((state) => state.isCorrect)
-  const pointsEarned = useGameStore((state) => state.pointsEarned)
-  const answeredPlayerId = useGameStore((state) => state.answeredPlayerId)
-  const submittedAnswer = useGameStore((state) => state.submittedAnswer)
-  const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
 
-  const roomId = useGameStore((state) => state.roomId)
-  const mode = useGameStore((state) => state.mode)
-  const matchType = useGameStore((state) => state.matchType)
+  const { phase } = useGamePhase()
+  const { buzzerWinner } = useBuzzerState()
+  const currentQuestion = useCurrentQuestion()
+  const { questionNumber, totalQuestions } = useQuestionProgress()
+  const {
+    isCorrect,
+    pointsEarned,
+    answeredPlayerId,
+    submittedAnswer,
+    correctAnswer: globalCorrectAnswer,
+  } = useAnswerState()
+  const { roomId, mode, matchType } = useRoomConfig()
+
+  const uid = userId || 'user'
+  const myScore = usePlayerScore(uid)
+  const answeredScore = usePlayerScore(answeredPlayerId ?? 'unknown')
 
   const [postResultData, setPostResultData] = useState<PlayerResultData[]>([])
 
-  const isMyBuzzer = buzzerWinner === (userId || 'user')
+  const isMyBuzzer = buzzerWinner === uid
 
-  // Join Room On Mount
   useEffect(() => {
     let mounted = true
     const actRoom = roomId || `room_${Date.now()}`
@@ -72,66 +79,68 @@ export default function EruditPage() {
       }
       joinRoom(actRoom, actMode, actMatch).catch(console.error)
     }
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+    }
   }, [roomId, mode, matchType, phase, joinRoom])
 
-  // Auto navigation when finished
   useEffect(() => {
     if (phase === 'finished') {
       router.push('/results')
     }
   }, [phase, router])
 
-  // Process server-emitted answers into view state - memoized
   const processedResultData = useMemo<PlayerResultData[]>(() => {
     if (phase !== 'results') return []
-    
+
     return [
       {
         playerId: answeredPlayerId || 'unknown',
-        playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
+        playerName: answeredPlayerId === uid ? username : 'Raqib',
         answer: submittedAnswer,
         isCorrect: isCorrect || false,
         pointsDelta: pointsEarned,
-        newScore: scores[answeredPlayerId || 'unknown'] || 0,
-        isCurrentUser: answeredPlayerId === (userId || 'user'),
-      }
+        newScore: answeredScore,
+        isCurrentUser: answeredPlayerId === uid,
+      },
     ]
-  }, [phase, answeredPlayerId, isCorrect, pointsEarned, scores, username, userId, submittedAnswer])
+  }, [
+    phase,
+    answeredPlayerId,
+    isCorrect,
+    pointsEarned,
+    answeredScore,
+    username,
+    uid,
+    submittedAnswer,
+  ])
 
-  // Sync processed data to state only when it changes
   useEffect(() => {
     if (processedResultData.length > 0) {
       setPostResultData(processedResultData)
     }
   }, [processedResultData])
 
-  // Calculate total time for timer display based on phase
-  const totalTime = useMemo(() => {
-    if (phase === 'answering') return 10
-    if (phase === 'question' && currentQuestion) return currentQuestion.timeLimit
-    return 15
-  }, [phase, currentQuestion])
-
   const handleBuzzerClick = useCallback(() => {
     haptic('medium')
     submitBuzzer()
   }, [haptic, submitBuzzer])
 
-  const handleAnswerSubmit = useCallback((answer: string) => {
-    haptic('medium')
-    useGameStore.getState().submitAnswer(answer) // Store locally so it displays on post-results nicely
-    submitAnswer(answer)
-  }, [haptic, submitAnswer])
+  const handleAnswerSubmit = useCallback(
+    (answer: string) => {
+      haptic('medium')
+      useGameStore.getState().submitAnswer(answer)
+      submitAnswer(answer)
+    },
+    [haptic, submitAnswer],
+  )
 
   if (!currentQuestion) {
     return (
       <AppShell className="items-center justify-center">
-         <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <div className="text-muted-foreground font-medium animate-pulse">
-            Server kutilmoqda...
-          </div>
+          <div className="text-muted-foreground font-medium animate-pulse">Server kutilmoqda...</div>
         </div>
       </AppShell>
     )
@@ -141,18 +150,17 @@ export default function EruditPage() {
     <AppShell>
       <TgSafeArea>
         <div className="flex flex-col h-full bg-background relative overflow-hidden">
-          {/* Header */}
           <div className="p-4 border-b border-border/30 bg-background/80 backdrop-blur-sm z-10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Erudit</span>
+                <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Erudit
+                </span>
                 <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/20 px-2 py-0 border">
                   Poxod
                 </Badge>
               </div>
-              <span className="text-sm font-medium text-foreground">
-                {scores[userId || 'user'] || 0} ball
-              </span>
+              <span className="text-sm font-medium text-foreground">{myScore} ball</span>
             </div>
             {(phase === 'question' || phase === 'answering') && (
               <ProgressTimer
@@ -163,9 +171,7 @@ export default function EruditPage() {
             )}
           </div>
 
-          {/* Main Stage */}
           <div className="flex-1 flex flex-col relative z-0">
-            {/* Split layout: Top half question, Bottom half buzzer/input */}
             <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30">
               <QuestionDisplay
                 question={currentQuestion}
@@ -176,7 +182,6 @@ export default function EruditPage() {
             </div>
 
             <div className="h-[55%] relative w-full bg-card/20">
-              {/* Buzzer Phase */}
               <AnimatePresence>
                 {phase === 'question' && (
                   <motion.div
@@ -191,22 +196,22 @@ export default function EruditPage() {
                       disabled={false}
                       className="shadow-[0_0_40px_-10px_rgba(var(--primary),0.3)] hover:shadow-[0_0_60px_-10px_rgba(var(--primary),0.5)] transition-shadow duration-500"
                     />
-                    
-                    <motion.div 
+
+                    <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-8 flex items-center justify-center p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 max-w-xs"
                     >
                       <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mr-2" />
                       <p className="text-[11px] leading-tight text-amber-600/90 font-medium">
-                        Diqqat: Noto'g'ri javob yoki vaqtida javob bermaslik <strong className="text-amber-500">-10 ball</strong> bilan jazolanadi!
+                        Diqqat: Noto&apos;g&apos;ri javob yoki vaqtida javob bermaslik{' '}
+                        <strong className="text-amber-500">-10 ball</strong> bilan jazolanadi!
                       </p>
                     </motion.div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Answer Input Phase */}
               <AnimatePresence>
                 {phase === 'answering' && (
                   <motion.div
@@ -239,15 +244,14 @@ export default function EruditPage() {
                         <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                           <Loader2 className="w-8 h-8 text-primary animate-spin" />
                         </div>
-                        <p className="text-xl font-semibold text-foreground">Raqib o'ylamoqda...</p>
+                        <p className="text-xl font-semibold text-foreground">Raqib o&apos;ylamoqda...</p>
                         <p className="text-sm text-muted-foreground mt-2">10 soniya vaqti bor</p>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
-              
-              {/* Results Phase */}
+
               <AnimatePresence>
                 {phase === 'results' && (
                   <motion.div

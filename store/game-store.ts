@@ -146,27 +146,36 @@ export const useGameStore = create<GameState>()((set) => ({
   
   setCurrentPhase: (phase) => set({ currentPhase: phase }),
 
-  setQuestion: (question, questionNumber, totalQuestions, dynamicTimerMs = 15000) => set((state) => ({
-    currentQuestion: normalizeQuestion(question, state.mode, { questionNumber }),
-    questionNumber,
-    totalQuestions,
-    dynamicTimerMs,
-    currentPhase: 'reading',
-    phase: 'question',
-    lockedPlayers: [],
-    buzzerLockedBy: null,
-    buzzerWinner: null,
-    buzzerTimestamp: null,
-    buzzerLocked: false,
-    submittedAnswer: null,
-    isCorrect: null,
-    correctAnswer: null,
-    roundResults: null,
-    aiRecheckPending: false,
-    aiRecheckResult: null,
-    peerVoteActive: false,
-    peerVotes: {},
-  })),
+  setQuestion: (question, questionNumber, totalQuestions, dynamicTimerMs = 15000) =>
+    set((state) => {
+      const normalized = normalizeQuestion(question, state.mode, { questionNumber })
+
+      if (state.currentQuestion?.id === normalized.id && state.questionNumber === questionNumber) {
+        return {}
+      }
+
+      return {
+        currentQuestion: normalized,
+        questionNumber,
+        totalQuestions,
+        dynamicTimerMs,
+        currentPhase: 'reading',
+        phase: 'question',
+        lockedPlayers: [],
+        buzzerLockedBy: null,
+        buzzerWinner: null,
+        buzzerTimestamp: null,
+        buzzerLocked: false,
+        submittedAnswer: null,
+        isCorrect: null,
+        correctAnswer: null,
+        roundResults: null,
+        aiRecheckPending: false,
+        aiRecheckResult: null,
+        peerVoteActive: false,
+        peerVotes: {},
+      }
+    }),
   
   setDynamicTimerMs: (ms) => set({ dynamicTimerMs: ms }),
   setLockedPlayers: (players) => set({ lockedPlayers: players }),
@@ -201,12 +210,20 @@ export const useGameStore = create<GameState>()((set) => ({
     phase: 'results',
   }),
   
-  updateScore: (playerId, delta) => set((state) => ({
-    scores: {
-      ...state.scores,
-      [playerId]: (state.scores[playerId] ?? 0) + delta,
-    },
-  })),
+  updateScore: (playerId, delta) =>
+    set((state) => {
+      const currentScore = state.scores[playerId] ?? 0
+      const newScore = currentScore + delta
+
+      if (currentScore === newScore) return {}
+
+      return {
+        scores: {
+          ...state.scores,
+          [playerId]: newScore,
+        },
+      }
+    }),
   
   setScores: (scores) => set({ scores }),
   

@@ -15,6 +15,15 @@ import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
 import { useTimer } from '@/hooks/use-timer'
+import {
+  useGamePhase,
+  useCurrentQuestion,
+  useQuestionProgress,
+  useBuzzerState,
+  useAnswerState,
+  usePlayerScore,
+  useRoomConfig,
+} from '@/hooks/use-game-selectors'
 import { Loader2 } from 'lucide-react'
 
 interface PlayerResultData {
@@ -31,33 +40,32 @@ export default function BrainRingPage() {
   const router = useRouter()
   const { haptic } = useTelegram()
   const { submitBuzzer, submitAnswer, joinRoom, requestAIRecheck } = useGameSocket()
-  const { timeRemaining, progress } = useTimer()
+  const { timeRemaining } = useTimer()
 
   const userId = useUserStore((state) => state.id)
   const username = useUserStore((state) => state.username)
-  
-  const roomId = useGameStore((state) => state.roomId)
-  const mode = useGameStore((state) => state.mode)
-  const matchType = useGameStore((state) => state.matchType)
-  
-  const phase = useGameStore((state) => state.phase)
-  const buzzerWinner = useGameStore((state) => state.buzzerWinner)
-  const currentQuestion = useGameStore((state) => state.currentQuestion)
-  const questionNumber = useGameStore((state) => state.questionNumber)
-  const totalQuestions = useGameStore((state) => state.totalQuestions)
-  const scores = useGameStore((state) => state.scores)
-  
-  const isCorrect = useGameStore((state) => state.isCorrect)
-  const pointsEarned = useGameStore((state) => state.pointsEarned)
-  const answeredPlayerId = useGameStore((state) => state.answeredPlayerId)
-  const submittedAnswer = useGameStore((state) => state.submittedAnswer)
-  const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
+
+  const { roomId, mode, matchType } = useRoomConfig()
+  const { phase } = useGamePhase()
+  const { buzzerWinner } = useBuzzerState()
+  const currentQuestion = useCurrentQuestion()
+  const { questionNumber, totalQuestions } = useQuestionProgress()
+  const {
+    isCorrect,
+    pointsEarned,
+    answeredPlayerId,
+    submittedAnswer,
+    correctAnswer: globalCorrectAnswer,
+  } = useAnswerState()
+
+  const uid = userId || 'user'
+  const myScore = usePlayerScore(uid)
+  const answeredScore = usePlayerScore(answeredPlayerId ?? 'unknown')
 
   const [postResultData, setPostResultData] = useState<PlayerResultData[]>([])
 
-  const isMyBuzzer = buzzerWinner === (userId || 'user')
+  const isMyBuzzer = buzzerWinner === uid
 
-  // Join Room On Mount to trigger server game logic
   useEffect(() => {
     let mounted = true
     const actRoom = roomId || `room_${Date.now()}`
@@ -70,65 +78,67 @@ export default function BrainRingPage() {
       }
       joinRoom(actRoom, actMode, actMatch).catch(console.error)
     }
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+    }
   }, [roomId, mode, matchType, phase, joinRoom])
 
-  // Auto navigation when finished
   useEffect(() => {
     if (phase === 'finished') {
       router.push('/results')
     }
   }, [phase, router])
 
-  // Process server-emitted answers into view state - memoized to prevent recalculation
   const processedResultData = useMemo<PlayerResultData[]>(() => {
     if (phase !== 'results') return []
-    
+
     return [
       {
         playerId: answeredPlayerId || 'unknown',
-        playerName: answeredPlayerId === (userId || 'user') ? username : 'Raqib',
+        playerName: answeredPlayerId === uid ? username : 'Raqib',
         answer: submittedAnswer,
         isCorrect: isCorrect || false,
         pointsDelta: pointsEarned,
-        newScore: scores[answeredPlayerId || 'unknown'] || 0,
-        isCurrentUser: answeredPlayerId === (userId || 'user'),
-      }
+        newScore: answeredScore,
+        isCurrentUser: answeredPlayerId === uid,
+      },
     ]
-  }, [phase, answeredPlayerId, isCorrect, pointsEarned, scores, username, userId, submittedAnswer])
+  }, [
+    phase,
+    answeredPlayerId,
+    isCorrect,
+    pointsEarned,
+    answeredScore,
+    username,
+    uid,
+    submittedAnswer,
+  ])
 
-  // Sync processed data to state only when it changes
   useEffect(() => {
     if (processedResultData.length > 0) {
       setPostResultData(processedResultData)
     }
   }, [processedResultData])
 
-  // Calculate total time for timer display based on phase
-  const totalTime = useMemo(() => {
-    if (phase === 'answering') return 10
-    if (phase === 'question' && currentQuestion) return currentQuestion.timeLimit
-    return 20
-  }, [phase, currentQuestion])
-
   const handleBuzzerClick = useCallback(() => {
     haptic('medium')
     submitBuzzer()
   }, [haptic, submitBuzzer])
 
-  const handleAnswerSubmit = useCallback((answer: string) => {
-    haptic('medium')
-    submitAnswer(answer)
-  }, [haptic, submitAnswer])
+  const handleAnswerSubmit = useCallback(
+    (answer: string) => {
+      haptic('medium')
+      submitAnswer(answer)
+    },
+    [haptic, submitAnswer],
+  )
 
   if (!currentQuestion) {
     return (
       <AppShell className="items-center justify-center">
-         <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <div className="text-muted-foreground font-medium animate-pulse">
-            Server kutilmoqda...
-          </div>
+          <div className="text-muted-foreground font-medium animate-pulse">Server kutilmoqda...</div>
         </div>
       </AppShell>
     )
@@ -138,13 +148,12 @@ export default function BrainRingPage() {
     <AppShell>
       <TgSafeArea>
         <div className="flex flex-col h-full bg-background relative overflow-hidden">
-          {/* Header */}
           <div className="p-4 border-b border-border/30 bg-background/80 backdrop-blur-sm z-10">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Brain-Ring</span>
-              <span className="text-sm font-medium text-foreground">
-                {scores[userId || 'user'] || 0} ball
+              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Brain-Ring
               </span>
+              <span className="text-sm font-medium text-foreground">{myScore} ball</span>
             </div>
             {(phase === 'question' || phase === 'answering') && (
               <ProgressTimer
@@ -156,7 +165,6 @@ export default function BrainRingPage() {
           </div>
 
           <div className="flex-1 flex flex-col relative z-0">
-            {/* Split layout */}
             <div className="h-[45%] flex flex-col justify-end p-6 border-b border-border/10 bg-gradient-to-b from-transparent to-card/30 overflow-hidden min-w-0 break-word">
               <QuestionDisplay
                 question={currentQuestion}
@@ -167,7 +175,6 @@ export default function BrainRingPage() {
             </div>
 
             <div className="h-[55%] relative w-full bg-card/20">
-              {/* Buzzer Phase */}
               <AnimatePresence>
                 {phase === 'question' && (
                   <motion.div
@@ -177,15 +184,11 @@ export default function BrainRingPage() {
                     transition={{ duration: 0.2 }}
                     className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-card/30"
                   >
-                    <BuzzerButton
-                      onPress={handleBuzzerClick}
-                      disabled={false}
-                    />
+                    <BuzzerButton onPress={handleBuzzerClick} disabled={false} />
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Answer Input Phase */}
               <AnimatePresence>
                 {phase === 'answering' && (
                   <motion.div
@@ -218,15 +221,14 @@ export default function BrainRingPage() {
                         <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                           <Loader2 className="w-8 h-8 text-primary animate-spin" />
                         </div>
-                        <p className="text-xl font-semibold text-foreground">Raqib o'ylamoqda...</p>
+                        <p className="text-xl font-semibold text-foreground">Raqib o&apos;ylamoqda...</p>
                         <p className="text-sm text-muted-foreground mt-2">10 soniya vaqti bor</p>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
-              
-              {/* Results Phase */}
+
               <AnimatePresence>
                 {phase === 'results' && (
                   <motion.div
@@ -241,11 +243,10 @@ export default function BrainRingPage() {
                       results={postResultData}
                       questionText={currentQuestion.text}
                       onContinue={() => {
-                        // Emit leaderboard ack to advance to next question
                         import('@/services/game-socket').then(({ getGameSocket }) => {
-                          getGameSocket().emit('game:leaderboard_ack', { 
-                            roomCode: roomId, 
-                            userId: userId || 'user' 
+                          getGameSocket().emit('game:leaderboard_ack', {
+                            roomCode: roomId,
+                            userId: uid,
                           })
                         })
                       }}

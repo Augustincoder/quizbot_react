@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client'
+import { socketEventBus } from '@/lib/socket-event-bus'
 import type { SocketEvent, SocketEventType } from '@/types/socket'
 import type { GameMode, MatchType } from '@/types/game'
 
@@ -105,6 +106,11 @@ export class GameSocket {
   emit(event: string, data: any): void {
     this.socket?.emit(event, data)
   }
+
+  /** Underlying socket.io client — used by the singleton event bus (one listener set globally). */
+  getIoSocket(): Socket | null {
+    return this.socket
+  }
 }
 
 export const getGameSocket = (): GameSocket => {
@@ -115,6 +121,7 @@ export const getGameSocket = (): GameSocket => {
 }
 
 export const resetGameSocket = (): void => {
+  socketEventBus.cleanup()
   if (socketInstance) {
     socketInstance.disconnect()
     socketInstance = null

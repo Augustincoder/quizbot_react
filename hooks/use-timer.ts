@@ -3,72 +3,82 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useGameStore } from '@/store/game-store'
 
-interface UseTimerOptions {
-  onTimeUp?: () => void
-  onTick?: (remaining: number) => void
-}
-
 interface UseTimerReturn {
   timeRemaining: number
   timerActive: boolean
   startTimer: (duration: number) => void
   stopTimer: () => void
-  resetTimer: (duration: number) => void
   progress: number
 }
 
-export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
-  const { onTimeUp, onTick } = options
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+export function useTimer(): UseTimerReturn {
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const rafRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
-  const remainingTimeRef = useRef<number>(0)
-  const totalDurationRef = useRef<number>(0)
+  const durationRef = useRef<number>(0)
+  const lastTickRef = useRef<number>(0)
 
-  const dynamicTimerMs = useGameStore((state) => state.dynamicTimerMs)
   const timeRemaining = useGameStore((state) => state.timeRemaining)
   const timerActive = useGameStore((state) => state.timerActive)
-  const setTimeRemaining = useGameStore((state) => state.setTimeRemaining)
-  const setTimerActive = useGameStore((state) => state.setTimerActive)
   const currentPhase = useGameStore((state) => state.currentPhase)
+  const dynamicTimerMs = useGameStore((state) => state.dynamicTimerMs)
 
   const tick = useCallback(() => {
     const now = Date.now()
     const elapsed = Math.floor((now - startTimeRef.current) / 1000)
-    const newTime = Math.max(0, remainingTimeRef.current - elapsed)
+    const remaining = Math.max(0, durationRef.current - elapsed)
 
-    setTimeRemaining(newTime)
-    onTick?.(newTime)
+    if (remaining !== lastTickRef.current) {
+      lastTickRef.current = remaining
+      useGameStore.getState().setTimeRemaining(remaining)
+    }
 
-    if (newTime <= 0) {
-      setTimerActive(false)
-      onTimeUp?.()
+    if (remaining <= 0) {
+      useGameStore.getState().setTimerActive(false)
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    } else {
+      rafRef.current = requestAnimationFrame(tick)
     }
-  }, [setTimeRemaining, setTimerActive, onTick, onTimeUp])
+  }, [])
 
   const startTimer = useCallback((duration: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+
     startTimeRef.current = Date.now()
-    remainingTimeRef.current = duration
-    totalDurationRef.current = duration
-    setTimeRemaining(duration)
-    setTimerActive(true)
-  }, [setTimeRemaining, setTimerActive])
+    durationRef.current = duration
+    lastTickRef.current = duration
+
+    useGameStore.getState().setTimeRemaining(duration)
+    useGameStore.getState().setTimerActive(true)
+
+    rafRef.current = requestAnimationFrame(tick)
+
+    intervalRef.current = setInterval(() => {
+      if (document.hidden) {
+        tick()
+      }
+    }, 1000)
+  }, [tick])
 
   const stopTimer = useCallback(() => {
-    setTimerActive(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
-  }, [setTimerActive])
-
-  const resetTimer = useCallback((duration: number) => {
-    stopTimer()
-    setTimeRemaining(duration)
-  }, [stopTimer, setTimeRemaining])
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    useGameStore.getState().setTimerActive(false)
+  }, [])
 
   useEffect(() => {
     if (currentPhase === 'reading' && dynamicTimerMs > 0) {
@@ -83,34 +93,20 @@ export function useTimer(options: UseTimerOptions = {}): UseTimerReturn {
   }, [currentPhase, dynamicTimerMs, startTimer, stopTimer])
 
   useEffect(() => {
-    if (!timerActive) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-      return
-    }
-
-    intervalRef.current = setInterval(tick, 1000)
-
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [timerActive, tick])
+  }, [])
 
-  const progress = totalDurationRef.current > 0
-    ? (timeRemaining / totalDurationRef.current) * 100
-    : 0
+  const progress =
+    durationRef.current > 0 ? (timeRemaining / durationRef.current) * 100 : 0
 
   return {
     timeRemaining,
     timerActive,
     startTimer,
     stopTimer,
-    resetTimer,
     progress,
   }
 }

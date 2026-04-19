@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { memo } from 'react'
 import { cn } from '@/lib/utils'
 import type { Question } from '@/types/game'
 
@@ -12,7 +13,7 @@ interface QuestionDisplayProps {
   compact?: boolean
 }
 
-export function QuestionDisplay({
+function QuestionDisplayComponent({
   question,
   questionNumber,
   totalQuestions,
@@ -49,14 +50,16 @@ export function QuestionDisplay({
       </motion.h2>
 
       {/* Difficulty badge */}
-      <div className={cn(
-        'px-3 py-1 rounded-full text-xs font-medium',
-        question.difficulty === 'easy' && 'bg-emerald-500/10 text-emerald-600',
-        question.difficulty === 'medium' && 'bg-amber-500/10 text-amber-600',
-        question.difficulty === 'hard' && 'bg-rose-500/10 text-rose-600',
-      )}>
+      <div
+        className={cn(
+          'px-3 py-1 rounded-full text-xs font-medium',
+          question.difficulty === 'easy' && 'bg-emerald-500/10 text-emerald-600',
+          question.difficulty === 'medium' && 'bg-amber-500/10 text-amber-600',
+          question.difficulty === 'hard' && 'bg-rose-500/10 text-rose-600',
+        )}
+      >
         {question.difficulty === 'easy' && 'Oson'}
-        {question.difficulty === 'medium' && 'O\'rta'}
+        {question.difficulty === 'medium' && "O'rta"}
         {question.difficulty === 'hard' && 'Qiyin'}
         {' - '}
         {question.points} ball
@@ -64,3 +67,9 @@ export function QuestionDisplay({
     </motion.div>
   )
 }
+
+export const QuestionDisplay = memo(QuestionDisplayComponent, (prev, next) => {
+  return (
+    prev.question.id === next.question.id && prev.questionNumber === next.questionNumber
+  )
+})

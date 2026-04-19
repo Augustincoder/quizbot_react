@@ -14,6 +14,15 @@ import { useUserStore } from '@/store/user-store'
 import { useTelegram } from '@/hooks/use-telegram'
 import { useGameSocket } from '@/hooks/use-game-socket'
 import { useTimer } from '@/hooks/use-timer'
+import {
+  useGamePhase,
+  useCurrentQuestion,
+  useQuestionProgress,
+  useAnswerState,
+  usePlayerScore,
+  useRoomConfig,
+  useZakovatResults,
+} from '@/hooks/use-game-selectors'
 import { CheckCircle2, XCircle, Zap, Loader2 } from 'lucide-react'
 
 interface RushSubmission {
@@ -30,25 +39,20 @@ export default function ZakovatPage() {
   const { timeRemaining } = useTimer()
 
   const userId = useUserStore((state) => state.id)
-  
-  // Bound to the global server-authoritative socket streams
-  const phase = useGameStore((state) => state.phase)
-  const currentQuestion = useGameStore((state) => state.currentQuestion)
-  const questionNumber = useGameStore((state) => state.questionNumber)
-  const totalQuestions = useGameStore((state) => state.totalQuestions)
-  const scores = useGameStore((state) => state.scores)
-  
-  const zakovatResults = useGameStore((state) => state.zakovatResults)
-  const globalCorrectAnswer = useGameStore((state) => state.correctAnswer)
 
-  const roomId = useGameStore((state) => state.roomId)
-  const mode = useGameStore((state) => state.mode)
-  const matchType = useGameStore((state) => state.matchType)
+  const { phase } = useGamePhase()
+  const currentQuestion = useCurrentQuestion()
+  const { questionNumber, totalQuestions } = useQuestionProgress()
+  const { correctAnswer: globalCorrectAnswer } = useAnswerState()
+  const zakovatResults = useZakovatResults()
+  const { roomId, mode, matchType } = useRoomConfig()
+
+  const uid = userId || 'user'
+  const myScore = usePlayerScore(uid)
 
   const [hasAnswered, setHasAnswered] = useState(false)
   const [lastSubmission, setLastSubmission] = useState<RushSubmission | null>(null)
 
-  // Join Room On Mount
   useEffect(() => {
     let mounted = true
     const actRoom = roomId || `room_${Date.now()}`
@@ -61,54 +65,52 @@ export default function ZakovatPage() {
       }
       joinRoom(actRoom, actMode, actMatch).catch(console.error)
     }
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+    }
   }, [roomId, mode, matchType, phase, joinRoom])
 
-  // Listen to incoming question changes
   useEffect(() => {
     if (phase === 'question' && currentQuestion) {
       setHasAnswered(false)
       setLastSubmission(null)
     }
-    
-    // Auto navigation when finished
+
     if (phase === 'finished') {
       router.push('/results')
     }
   }, [phase, currentQuestion, router])
 
-  // Memoize my result to prevent recalculation
   const myResult = useMemo(() => {
-    return zakovatResults?.find((res) => res.playerId === (userId || 'user'))
-  }, [zakovatResults, userId])
-  
+    return zakovatResults?.find((res) => res.playerId === uid)
+  }, [zakovatResults, uid])
+
   const isTimeUp = phase === 'results'
 
-  // Handle rush answer submission
-  const handleRushSubmit = useCallback(async (answer: string, clientTimestamp: number) => {
-    if (!currentQuestion || hasAnswered) return
+  const handleRushSubmit = useCallback(
+    async (answer: string, clientTimestamp: number) => {
+      if (!currentQuestion || hasAnswered) return
 
-    setHasAnswered(true) // Lock input immediately
-    
-    setLastSubmission({
-      answer,
-      timestamp: clientTimestamp
-    })
-    
-    haptic('medium')
+      setHasAnswered(true)
 
-    // Submit answer to server. Does NOT calculate local correctness.
-    await submitAnswer(answer)
-  }, [currentQuestion, hasAnswered, submitAnswer, haptic])
+      setLastSubmission({
+        answer,
+        timestamp: clientTimestamp,
+      })
+
+      haptic('medium')
+
+      await submitAnswer(answer)
+    },
+    [currentQuestion, hasAnswered, submitAnswer, haptic],
+  )
 
   if (!currentQuestion) {
     return (
       <AppShell className="items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <div className="text-muted-foreground font-medium animate-pulse">
-            Server kutilmoqda...
-          </div>
+          <div className="text-muted-foreground font-medium animate-pulse">Server kutilmoqda...</div>
         </div>
       </AppShell>
     )
@@ -118,7 +120,6 @@ export default function ZakovatPage() {
     <AppShell>
       <TgSafeArea>
         <div className="flex flex-col h-full">
-          {/* Header with timer */}
           <div className="p-4 border-b border-border/30">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -128,9 +129,7 @@ export default function ZakovatPage() {
                   Rush
                 </span>
               </div>
-              <span className="text-sm font-medium text-foreground">
-                {scores[userId || 'user'] || 0} ball
-              </span>
+              <span className="text-sm font-medium text-foreground">{myScore} ball</span>
             </div>
             <ProgressTimer
               timeRemaining={timeRemaining}
@@ -139,7 +138,6 @@ export default function ZakovatPage() {
             />
           </div>
 
-          {/* Question */}
           <div className="flex-1 flex flex-col items-center justify-center py-6">
             <AnimatePresence mode="wait">
               <QuestionDisplay
@@ -150,7 +148,6 @@ export default function ZakovatPage() {
               />
             </AnimatePresence>
 
-            {/* In-progress hold feedback */}
             <AnimatePresence>
               {hasAnswered && phase === 'question' && (
                 <motion.div
@@ -168,17 +165,11 @@ export default function ZakovatPage() {
             </AnimatePresence>
           </div>
 
-          {/* Persistent Rush Input — disabled after 1 attempt */}
           {!isTimeUp && (
-            <RushInput
-              onSubmit={handleRushSubmit}
-              disabled={hasAnswered}
-              lastResult={null}
-            />
+            <RushInput onSubmit={handleRushSubmit} disabled={hasAnswered} lastResult={null} />
           )}
         </div>
 
-        {/* Global Time-up / Results overlay */}
         <BlurOverlay show={isTimeUp}>
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -190,8 +181,14 @@ export default function ZakovatPage() {
             ) : (
               <XCircle className="h-16 w-16 text-destructive" />
             )}
-            
-            <span className={myResult?.isCorrect ? "text-xl font-bold text-emerald-500" : "text-xl font-bold text-destructive"}>
+
+            <span
+              className={
+                myResult?.isCorrect
+                  ? 'text-xl font-bold text-emerald-500'
+                  : 'text-xl font-bold text-destructive'
+              }
+            >
               {myResult?.isCorrect ? "Tabriklaymiz, to'g'ri!" : "Vaqt tugadi / Noto'g'ri"}
             </span>
 
@@ -200,16 +197,16 @@ export default function ZakovatPage() {
                 +{myResult.pointsEarned} ball
               </span>
             )}
-            
+
             <div className="mt-2 text-sm text-foreground bg-card/80 p-3 rounded-lg border border-border/50">
-              <p className="text-muted-foreground mb-1 text-xs">To'g'ri javob:</p>
+              <p className="text-muted-foreground mb-1 text-xs">To&apos;g&apos;ri javob:</p>
               <p className="font-semibold">{globalCorrectAnswer}</p>
             </div>
-            
+
             {lastSubmission && (
-               <div className="mt-1 text-xs text-muted-foreground">
-                 Sizning javobingiz: "{lastSubmission.answer}"
-               </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Sizning javobingiz: &quot;{lastSubmission.answer}&quot;
+              </div>
             )}
           </motion.div>
         </BlurOverlay>
